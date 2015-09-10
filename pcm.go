@@ -104,16 +104,17 @@ func main() {
 	var found string
 	for {
 		color.Yellow("Search for: ")
-
+		var input string
+		var err error
 		if searchFor != "" {
 			input = searchFor
 			searchFor = ""
 		} else {
-			input, err := reader.ReadString('\n')
+			input, err = reader.ReadString('\n')
 			p(err, "reading stdin")
 			input = strings.Trim(input, "\r\n ")
-			suggs := fuzzy.Find(input, words)
 		}
+		suggs := fuzzy.Find(input, words)
 		if len(suggs) > 1 {
 			color.Yellowln("Suggestions:")
 			for _, v := range suggs {
