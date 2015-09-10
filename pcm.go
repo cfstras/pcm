@@ -67,7 +67,6 @@ type Command struct {
 
 var (
 	connectionsPath string = "~/Downloads/connections.xml"
-	searchFor       string = ""
 	conns           Configuration
 )
 
@@ -88,8 +87,10 @@ func main() {
 
 	if flag.NArg() > 1 {
 		flag.Usage()
+		color.Yellowln("Usage: pcm [search term]")
 		panic("Only one arg allowed.")
 	}
+	var searchFor string
 	if flag.NArg() == 1 {
 		searchFor = flag.Arg(0)
 	}
@@ -104,11 +105,15 @@ func main() {
 	for {
 		color.Yellow("Search for: ")
 
-		input, err := reader.ReadString('\n')
-		p(err, "reading stdin")
-		input = strings.Trim(input, "\r\n ")
-		suggs := fuzzy.Find(input, words)
-
+		if searchFor != "" {
+			input = searchFor
+			searchFor = ""
+		} else {
+			input, err := reader.ReadString('\n')
+			p(err, "reading stdin")
+			input = strings.Trim(input, "\r\n ")
+			suggs := fuzzy.Find(input, words)
+		}
 		if len(suggs) > 1 {
 			color.Yellowln("Suggestions:")
 			for _, v := range suggs {
@@ -201,7 +206,6 @@ func listConnections(conns *Configuration) {
 func descendConnections(prefix string, node Container, conns *Configuration) {
 	for _, c := range node.Connections {
 		key := prefix + "/" + c.Name
-		fmt.Println(key)
 		conns.AllConnections[key] = c
 	}
 	for _, n := range node.Containers {
