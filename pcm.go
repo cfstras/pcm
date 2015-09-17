@@ -8,12 +8,14 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"os/user"
 	"strings"
 
 	"github.com/cfstras/go-utils/color"
 	"github.com/kr/pty"
 	"github.com/renstrom/fuzzysearch/fuzzy"
+	"golang.org/x/crypto/ssh/terminal"
 	"golang.org/x/net/html/charset"
 )
 
@@ -137,13 +139,12 @@ func main() {
 	fmt.Println(conn.Login)
 	fmt.Println(conn.Command)
 	connect(conn)
-	color.Redln("TODO")
 }
 
 func connect(c Connection) {
 	cmd := &exec.Cmd{}
 	cmd.Path = "/usr/bin/ssh"
-	cmd.Args = []string{"-T", fmt.Sprint("-p", c.Info.Port), "-l" + c.Login.User, c.Info.Host}
+	cmd.Args = []string{fmt.Sprint("-p", c.Info.Port), "-l" + c.Login.User, c.Info.Host}
 	color.Yellowln(cmd.Path, cmd.Args)
 
 	outFunc := func(pipe *os.File, name string, nextCommand func() string) {
@@ -174,6 +175,9 @@ func connect(c Connection) {
 		for {
 			n, err := os.Stdin.Read(buf)
 			//fmt.Println("my stdin got", n, string(buf[:n]))
+			if err == io.EOF {
+				pipe.Write([]byte{0x04})
+			}
 			if err != nil {
 				fmt.Println("my stdin got error", err)
 				fmt.Println("closing stdIn:", pipe.Close())
@@ -202,14 +206,29 @@ func connect(c Connection) {
 		return ""
 	}
 
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt)
+
+	signalWatcher := func(out *os.File) {
+		for _ = range signals {
+			out.Write([]byte{0x03})
+		}
+	}
+
 	pty, err := pty.Start(cmd)
 	p(err, "starting ssh")
+	oldState, err := terminal.MakeRaw(0)
+	p(err, "making terminal raw")
+	defer terminal.Restore(0, oldState)
 
 	go outFunc(pty, "pty", nextCommand)
 	go inFunc(pty)
+	go signalWatcher(pty)
 
 	err = cmd.Wait()
-	p(err, "waiting for command")
+	if err != nil {
+		fmt.Println(err)
+	}
 }
 
 func DummyReader(label string, input io.Reader) (io.Reader, error) {
