@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"os/user"
 	"strings"
 
 	"github.com/cfstras/go-utils/color"
+	"github.com/kr/pty"
 	"github.com/renstrom/fuzzysearch/fuzzy"
 	"golang.org/x/net/html/charset"
 )
@@ -134,8 +136,80 @@ func main() {
 	fmt.Println(conn.Info)
 	fmt.Println(conn.Login)
 	fmt.Println(conn.Command)
-
+	connect(conn)
 	color.Redln("TODO")
+}
+
+func connect(c Connection) {
+	cmd := &exec.Cmd{}
+	cmd.Path = "/usr/bin/ssh"
+	cmd.Args = []string{"-T", fmt.Sprint("-p", c.Info.Port), "-l" + c.Login.User, c.Info.Host}
+	color.Yellowln(cmd.Path, cmd.Args)
+
+	outFunc := func(pipe *os.File, name string, nextCommand func() string) {
+		buf := make([]byte, 1024)
+		for {
+			n, err := pipe.Read(buf)
+			str := string(buf[:n])
+			fmt.Print(str)
+			if strings.HasSuffix(str, "assword: ") || strings.HasSuffix(str, "$ ") ||
+				strings.HasSuffix(str, "# ") {
+				answer := nextCommand()
+				if answer != "" {
+					//fmt.Println("writing", answer)
+					pipe.Write([]byte(answer))
+					pipe.Write([]byte("\n"))
+				}
+			}
+			if err != nil {
+				fmt.Println("pipe", name, "error", err)
+				fmt.Println("closing pipe", name, pipe.Close())
+				return
+			}
+		}
+	}
+
+	inFunc := func(pipe io.WriteCloser) {
+		buf := make([]byte, 1024)
+		for {
+			n, err := os.Stdin.Read(buf)
+			//fmt.Println("my stdin got", n, string(buf[:n]))
+			if err != nil {
+				fmt.Println("my stdin got error", err)
+				fmt.Println("closing stdIn:", pipe.Close())
+				return
+			}
+			_, err = pipe.Write(buf[:n])
+
+			if err != nil {
+				fmt.Println("stdin got error", err)
+				fmt.Println("closing stdIn:", pipe.Close())
+				return
+			}
+		}
+	}
+
+	state := 0
+	nextCommand := func() string {
+		defer func() { state++ }()
+		if state == 0 {
+			return c.Login.Password
+		}
+		ind := state - 1
+		if len(c.Command.Commands) > ind {
+			return c.Command.Commands[ind]
+		}
+		return ""
+	}
+
+	pty, err := pty.Start(cmd)
+	p(err, "starting ssh")
+
+	go outFunc(pty, "pty", nextCommand)
+	go inFunc(pty)
+
+	err = cmd.Wait()
+	p(err, "waiting for command")
 }
 
 func DummyReader(label string, input io.Reader) (io.Reader, error) {
