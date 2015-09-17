@@ -136,15 +136,15 @@ func main() {
 
 	conn := conns.AllConnections[found]
 	fmt.Println(conn.Info)
-	fmt.Println(conn.Login)
-	fmt.Println(conn.Command)
+	//fmt.Println(conn.Login)
+	//fmt.Println(conn.Command)
 	connect(conn)
 }
 
 func connect(c Connection) {
 	cmd := &exec.Cmd{}
 	cmd.Path = "/usr/bin/ssh"
-	cmd.Args = []string{fmt.Sprint("-p", c.Info.Port), "-l" + c.Login.User, c.Info.Host}
+	cmd.Args = []string{"-v", "-p", fmt.Sprint(c.Info.Port), "-l", c.Login.User, c.Info.Host}
 	color.Yellowln(cmd.Path, cmd.Args)
 
 	outFunc := func(pipe *os.File, name string, nextCommand func() string) {
