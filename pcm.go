@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"os/user"
 	"strings"
+	"syscall"
 
 	"github.com/cfstras/go-utils/color"
 	"github.com/kr/pty"
@@ -18,6 +19,31 @@ import (
 	"golang.org/x/crypto/ssh/terminal"
 	"golang.org/x/net/html/charset"
 )
+
+/*
+#include <sys/ioctl.h>
+#include <unistd.h>
+
+void getsize(int* rows, int* cols) {
+	struct winsize w;
+	ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
+	*rows = w.ws_row;
+	*cols = w.ws_col;
+	//printf ("lines %d\n", w.ws_row);
+	//printf ("columns %d\n", w.ws_col);
+}
+void setsize(int fd, int rows, int cols) {
+	struct winsize w;
+	ioctl(fd, TIOCGWINSZ, &w);
+	w.ws_row = rows;
+	w.ws_col = cols;
+	ioctl(fd, TIOCSWINSZ, &w);
+	//printf ("lines %d\n", w.ws_row);
+	//printf ("columns %d\n", w.ws_col);
+}
+
+*/
+import "C"
 
 type Configuration struct {
 	XMLName xml.Name  `xml:"configuration"`
@@ -206,12 +232,23 @@ func connect(c Connection) {
 		return ""
 	}
 
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, os.Interrupt)
+	sendSize := func(out *os.File, cmd *exec.Cmd) {
+		var row, col C.int
+		C.getsize(&row, &col)
+		C.setsize(C.int(out.Fd()), row, col)
+		cmd.Process.Signal(syscall.SIGWINCH)
+	}
 
-	signalWatcher := func(out *os.File) {
-		for _ = range signals {
-			out.Write([]byte{0x03})
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt, syscall.SIGWINCH)
+
+	signalWatcher := func(out *os.File, cmd *exec.Cmd) {
+		for s := range signals {
+			if s == syscall.SIGWINCH {
+				sendSize(out, cmd)
+			} else if s == os.Interrupt {
+				out.Write([]byte{0x03})
+			}
 		}
 	}
 
@@ -223,7 +260,8 @@ func connect(c Connection) {
 
 	go outFunc(pty, "pty", nextCommand)
 	go inFunc(pty)
-	go signalWatcher(pty)
+	go signalWatcher(pty, cmd)
+	sendSize(pty, cmd)
 
 	err = cmd.Wait()
 	if err != nil {
