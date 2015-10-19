@@ -1,0 +1,39 @@
+{
+	"ImportPath": "github.com/cfstras/pcm",
+	"GoVersion": "go1.5.1",
+	"Deps": [
+		{
+			"ImportPath": "github.com/cfstras/go-utils/color",
+			"Rev": "d0fcdb6f554ec9ca93e1b097f757070a344d3240"
+		},
+		{
+			"ImportPath": "github.com/daviddengcn/go-colortext",
+			"Rev": "3b18c8575a432453d41fdafb340099fff5bba2f7"
+		},
+		{
+			"ImportPath": "github.com/kr/pty",
+			"Comment": "release.r56-28-g5cf931e",
+			"Rev": "5cf931ef8f76dccd0910001d74a58a7fca84a83d"
+		},
+		{
+			"ImportPath": "github.com/renstrom/fuzzysearch/fuzzy",
+			"Rev": "e452554f84538afbf49c4ffbc56ce5493587b50b"
+		},
+		{
+			"ImportPath": "golang.org/x/crypto/ssh/terminal",
+			"Rev": "aedad9a179ec1ea11b7064c57cbc6dc30d7724ec"
+		},
+		{
+			"ImportPath": "golang.org/x/net/html",
+			"Rev": "db8e4de5b2d6653f66aea53094624468caad15d2"
+		},
+		{
+			"ImportPath": "golang.org/x/text/encoding",
+			"Rev": "6368131e2e9977b23aa20c631034cb98d65461a7"
+		},
+		{
+			"ImportPath": "golang.org/x/text/transform",
+			"Rev": "6368131e2e9977b23aa20c631034cb98d65461a7"
+		}
+	]
+}
