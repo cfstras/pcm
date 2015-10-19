@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"os/user"
+	"sort"
 	"strings"
 	"syscall"
 
@@ -100,6 +101,12 @@ var (
 	conns           Configuration
 )
 
+type StringList []string
+
+func (l StringList) Len() int           { return len(l) }
+func (l StringList) Swap(i, j int)      { l[i], l[j] = l[j], l[i] }
+func (l StringList) Less(i, j int) bool { return strings.Compare(l[i], l[j]) < 0 }
+
 func main() {
 	defer func() {
 		if err := recover(); err != nil {
@@ -144,17 +151,25 @@ func main() {
 			p(err, "reading stdin")
 			input = strings.Trim(input, "\r\n ")
 		}
-		suggs := fuzzy.Find(input, words)
+		if input == "" {
+			for _, v := range words {
+				sort.Stable(StringList(words))
+				fmt.Println(v)
+			}
+			continue
+		}
+		suggs := fuzzy.RankFind(input, words)
 		if len(suggs) > 1 {
+			sort.Stable(suggs)
 			color.Yellowln("Suggestions:")
 			for _, v := range suggs {
-				fmt.Println(v)
+				fmt.Println(v.Target)
 			}
 			color.Redln("Please try again.")
 		} else if len(suggs) == 0 {
 			color.Redln("Nothing found for", input+". Please try again.")
 		} else {
-			found = suggs[0]
+			found = suggs[0].Target
 			break
 		}
 	}
