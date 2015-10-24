@@ -50,18 +50,27 @@ type Configuration struct {
 	XMLName xml.Name  `xml:"configuration"`
 	Root    Container `xml:"root"`
 
-	AllConnections map[string]Connection
+	AllConnections map[string]*Connection
 }
+
+type _node struct {
+	Name string `xml:"name,attr"`
+	Type string `xml:"type,attr"`
+}
+
+type Node interface {
+}
+
 type Container struct {
-	Type        string       `xml:"type,attr"`
-	Name        string       `xml:"name,attr"`
+	_node
+
 	expanded    bool         `xml:"expanded, attr"`
 	Containers  []Container  `xml:"container"`
 	Connections []Connection `xml:"connection"`
 }
+
 type Connection struct {
-	Type string `xml:"type,attr"`
-	Name string `xml:"name,attr"`
+	_node
 
 	Info    Info    `xml:"connection_info"`
 	Login   Login   `xml:"login"`
@@ -116,6 +125,11 @@ func main() {
 	}()
 
 	pathP := flag.String("connectionsPath", connectionsPath, "Path to PuTTY connections.xml")
+	verbose := false
+	useFuzzySimple := false
+	flag.BoolVar(&verbose, "verbose", false, "Display more info, such as hostnames and passwords")
+	flag.BoolVar(&verbose, "v", false, "Display more info, such as hostnames and passwords")
+	flag.BoolVar(&useFuzzySimple, "simple", true, "Use simple interface")
 
 	flag.Parse()
 	if pathP != nil {
@@ -133,9 +147,40 @@ func main() {
 	}
 
 	conns = loadConns()
-	listConnections(&conns)
+	conns.AllConnections = listConnections(&conns)
+
+	var conn *Connection
+	if useFuzzySimple {
+		conn = fuzzySimple(&conns, searchFor)
+	} else {
+		conn = selectConnection(&conns, searchFor)
+	}
+
+	if conn == nil {
+		return
+	}
+
+	color.Yellowln("Using", conn.Info.Name)
+	color.Redln(conn.Info.Host, conn.Info.Port)
+	if verbose {
+		color.Yellow("User: ")
+		fmt.Println(conn.Login.User)
+		color.Yellow("Password: ")
+		fmt.Println(conn.Login.Password)
+		color.Yellowln("Commands:")
+		for _, v := range conn.Command.Commands {
+			fmt.Println(v)
+
+		}
+	}
+	//fmt.Println(conn.Login)
+	//fmt.Println(conn.Command)
+	connect(conn)
+}
+
+func fuzzySimple(conf *Configuration, searchFor string) *Connection {
 	//treePrint(conns)
-	words := listWords(&conns)
+	words := listWords(conns.AllConnections)
 
 	reader := bufio.NewReader(os.Stdin)
 	var found string
@@ -173,16 +218,11 @@ func main() {
 			break
 		}
 	}
-	color.Yellowln("Using", found)
-
 	conn := conns.AllConnections[found]
-	fmt.Println(conn.Info)
-	//fmt.Println(conn.Login)
-	//fmt.Println(conn.Command)
-	connect(conn)
+	return conn
 }
 
-func connect(c Connection) {
+func connect(c *Connection) {
 	cmd := &exec.Cmd{}
 	cmd.Path = "/usr/bin/ssh"
 	cmd.Args = []string{"-v", "-p", fmt.Sprint(c.Info.Port), "-l", c.Login.User, c.Info.Host}
@@ -312,57 +352,68 @@ func p(err error, where string) {
 	}
 }
 
-func treePrint(conns Configuration) {
-	treeDescend(0, conns.Root)
+func treePrint(target *[]string, index map[int]Node, conns *Configuration) {
+	treeDescend(target, index, "", &conns.Root)
 }
-func treeDescend(depth int, node Container) {
-	for i, nextCont := range node.Containers {
+func treeDescend(target *[]string, index map[int]Node, prefix string, node *Container) {
+	for i := range node.Containers {
+		nextCont := &node.Containers[i]
 		var nodeSym string
+		var newPrefix string
 		if i == 0 {
 			nodeSym = "┣"
+			newPrefix = "┃ "
 		} else if i == len(node.Containers)-1 {
 			if len(node.Connections) > 0 {
 				nodeSym = "┡"
+				newPrefix = "│ "
 			} else {
 				nodeSym = "┗"
+				newPrefix = "┃ "
 			}
 		} else {
 			nodeSym = "┣"
+			newPrefix = "┃ "
 		}
-		fmt.Print(strings.Repeat("  ", depth), nodeSym, "━┓ ", nextCont.Name, "\n")
-		treeDescend(depth+1, nextCont)
+		index[len(*target)] = nextCont
+		*target = append(*target, prefix+nodeSym+"━┓ "+nextCont.Name)
+		treeDescend(target, index, prefix+newPrefix, nextCont)
 	}
-	for i, conn := range node.Connections {
+	for i := range node.Connections {
+		conn := &node.Connections[i]
 		var nodeSym string
 		if i == len(node.Connections)-1 {
 			nodeSym = "└"
-		} else if len(node.Containers) != 0 {
+		} else if len(node.Connections) != 0 {
 			nodeSym = "├"
 		} else {
 			nodeSym = "┌"
 		}
-		fmt.Print(strings.Repeat("  ", depth), nodeSym, "─ ", conn.Name, "\n")
+		index[len(*target)] = conn
+		*target = append(*target, prefix+nodeSym+"─ "+conn.Name)
 	}
 }
 
-func listConnections(conns *Configuration) {
-	conns.AllConnections = make(map[string]Connection)
-	descendConnections("", conns.Root, conns)
+func listConnections(config *Configuration) map[string]*Connection {
+	conns := make(map[string]*Connection)
+	descendConnections("", config.Root, conns)
+	return conns
 }
 
-func descendConnections(prefix string, node Container, conns *Configuration) {
-	for _, c := range node.Connections {
+func descendConnections(prefix string, node Container, conns map[string]*Connection) {
+	for i := range node.Connections {
+		c := &node.Connections[i]
 		key := prefix + "/" + c.Name
-		conns.AllConnections[key] = c
+		conns[key] = c
 	}
 	for _, n := range node.Containers {
 		descendConnections(prefix+"/"+n.Name, n, conns)
 	}
 }
 
-func listWords(conns *Configuration) []string {
-	words := make([]string, 0, len(conns.AllConnections))
-	for k := range conns.AllConnections {
+func listWords(conns map[string]*Connection) []string {
+	words := make([]string, 0, len(conns))
+	for k := range conns {
 		words = append(words, k)
 	}
 	return words
