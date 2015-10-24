@@ -15,7 +15,13 @@ func selectConnection(conf *Configuration, input string) *Connection {
 
 	treeView := NewSelectList()
 	treePrint(&treeView.Items, connectionsIndex, conf)
-	treeView.Height = ui.TermHeight() - 3
+	//treeView.Items = []string{"1 one", "2 two", "3 three", "4 four", "5 five",
+	//	"6 six", "7 seven", "8 eight"}
+
+	debugView := ui.NewPar("")
+	debugView.Height = 5
+
+	treeView.Height = ui.TermHeight() - 3 - debugView.Height
 
 	searchView := ui.NewPar(input)
 	searchView.Height = 3
@@ -32,6 +38,8 @@ func selectConnection(conf *Configuration, input string) *Connection {
 		ui.NewRow(
 			ui.NewCol(12, 0, treeView)),
 		ui.NewRow(
+			ui.NewCol(12, 0, debugView)),
+		ui.NewRow(
 			ui.NewCol(6, 0, searchView),
 			ui.NewCol(6, 0, menuView)))
 
@@ -42,11 +50,11 @@ func selectConnection(conf *Configuration, input string) *Connection {
 		ui.Render(ui.Body)
 		ev := <-events
 		if ev.Err != nil {
-			fmt.Println(ev.Err)
+			debugView.Text = ev.Err.Error()
 		}
 		switch ev.Type {
 		case ui.EventKey:
-			if ev.Key >= ui.KeyHome && ev.Key <= ui.KeyArrowRight {
+			if ev.Key <= ui.KeyHome && ev.Key >= ui.KeyArrowRight {
 				switch ev.Key {
 				case ui.KeyHome:
 					treeView.CurrentSelection = 0
@@ -60,6 +68,11 @@ func selectConnection(conf *Configuration, input string) *Connection {
 					treeView.CurrentSelection++
 				case ui.KeyArrowUp:
 					treeView.CurrentSelection--
+				}
+				if treeView.CurrentSelection > len(treeView.Items)-1 {
+					treeView.CurrentSelection = len(treeView.Items) - 1
+				} else if treeView.CurrentSelection < 0 {
+					treeView.CurrentSelection = 0
 				}
 			} else if ev.Key == ui.KeyEnter {
 				n := connectionsIndex[treeView.CurrentSelection]
@@ -82,32 +95,43 @@ func selectConnection(conf *Configuration, input string) *Connection {
 				}
 			}
 		}
+
+		treeView.Align()
+		if ev.Err == nil {
+			debugView.Text = fmt.Sprintf(
+				"ev: %d key: %x\ncur: %d scroll: %d scrolledCur: %d\ninner: %d",
+				ev.Type, ev.Key, treeView.CurrentSelection, treeView.scroll,
+				treeView.scrolledSelection, treeView.InnerHeight())
+		}
 	}
 }
 
 type SelectList struct {
 	ui.Block
 
-	upperList, lowerList *ui.List
-	middle               *ui.Par
+	upperList, lowerList ui.List
+	middle               ui.Par
 
 	Items            []string
 	CurrentSelection int
+
+	scroll            int
+	scrolledSelection int
 }
 
 func NewSelectList() *SelectList {
-	s := &SelectList{}
-	s.upperList = ui.NewList()
-	s.lowerList = ui.NewList()
+	s := &SelectList{Block: *ui.NewBlock()}
+	s.upperList = *ui.NewList()
+	s.lowerList = *ui.NewList()
 	s.upperList.HasBorder = false
 	s.lowerList.HasBorder = false
 
 	s.HasBorder = true
 
-	s.middle = ui.NewPar("")
+	s.middle = *ui.NewPar("")
 	s.middle.Height = 1
 	s.middle.HasBorder = false
-	s.middle.BgColor = ui.ColorBlue
+	s.middle.TextBgColor = ui.ColorBlue
 
 	s.upperList.Overflow = "wrap"
 	s.lowerList.Overflow = "wrap"
@@ -120,7 +144,7 @@ func (s *SelectList) Buffer() []ui.Point {
 
 	ps := s.Block.Buffer()
 
-	s.upperList.Items = s.Items[:s.CurrentSelection]
+	s.upperList.Items = s.Items[s.scroll:]
 	s.middle.Text = s.Items[s.CurrentSelection]
 	s.lowerList.Items = s.Items[s.CurrentSelection+1:]
 
@@ -132,6 +156,20 @@ func (s *SelectList) Buffer() []ui.Point {
 }
 
 func (s *SelectList) Align() {
+	s.Block.Align()
+
+	s.scrolledSelection = s.CurrentSelection - s.scroll
+
+	if s.scrolledSelection >= s.InnerHeight() {
+		s.scroll += s.InnerHeight() - s.scrolledSelection + 1
+
+		s.scrolledSelection = s.CurrentSelection - s.scroll
+	} else if s.scrolledSelection < 0 {
+		s.scroll += s.scrolledSelection
+
+		s.scrolledSelection = s.CurrentSelection - s.scroll
+	}
+
 	if s.CurrentSelection == 0 {
 		s.upperList.IsDisplay = false
 		s.lowerList.IsDisplay = true
@@ -143,13 +181,26 @@ func (s *SelectList) Align() {
 		s.lowerList.IsDisplay = true
 	}
 
-	s.upperList.Height = s.CurrentSelection
-	s.lowerList.Height = s.Height - s.CurrentSelection - 1
-	s.upperList.Width = s.Width
-	s.lowerList.Width = s.Width
+	s.middle.Width = s.InnerWidth()
+	s.upperList.Height = s.scrolledSelection
+	s.lowerList.Height = s.InnerHeight() - s.scrolledSelection - 1
+	s.upperList.Width = s.InnerWidth()
+	s.lowerList.Width = s.InnerWidth()
 
-	s.lowerList.Y = s.CurrentSelection + 1
-	s.middle.Y = s.CurrentSelection
+	x := s.X + s.PaddingLeft
+	y := s.Y + s.PaddingTop
+	if s.HasBorder {
+		x += 1
+		y += 1
+	}
+
+	s.lowerList.X = x
+	s.upperList.X = x
+	s.middle.X = x
+
+	s.upperList.Y = y
+	s.lowerList.Y = y + s.scrolledSelection + 1
+	s.middle.Y = y + s.scrolledSelection
 
 	s.upperList.Align()
 	s.lowerList.Align()
