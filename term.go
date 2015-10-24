@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	ui "github.com/gizak/termui"
+	ui "github.com/cfstras/pcm/Godeps/_workspace/src/github.com/gizak/termui"
 )
 
 func selectConnection(conf *Configuration, input string) *Connection {

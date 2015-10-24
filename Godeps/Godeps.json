@@ -11,9 +11,22 @@
 			"Rev": "3b18c8575a432453d41fdafb340099fff5bba2f7"
 		},
 		{
+			"ImportPath": "github.com/gizak/termui",
+			"Rev": "e62b5929642af6cf5c34c2d5a680e68810fe9d38"
+		},
+		{
 			"ImportPath": "github.com/kr/pty",
 			"Comment": "release.r56-28-g5cf931e",
 			"Rev": "5cf931ef8f76dccd0910001d74a58a7fca84a83d"
+		},
+		{
+			"ImportPath": "github.com/mattn/go-runewidth",
+			"Comment": "travisish-33-g5890272",
+			"Rev": "5890272cd41c5103531cd7b79e428d99c9e97f76"
+		},
+		{
+			"ImportPath": "github.com/nsf/termbox-go",
+			"Rev": "785b5546a97f27460cfbc4c77132a46b90beb834"
 		},
 		{
 			"ImportPath": "github.com/renstrom/fuzzysearch/fuzzy",
