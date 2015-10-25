@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/cfstras/go-utils/math"
 	ui "github.com/cfstras/pcm/Godeps/_workspace/src/github.com/gizak/termui"
 )
 
@@ -96,12 +97,12 @@ func selectConnection(conf *Configuration, input string) *Connection {
 			}
 		}
 
-		treeView.Align()
 		if ev.Err == nil {
 			debugView.Text = fmt.Sprintf(
-				"ev: %d key: %x\ncur: %d scroll: %d scrolledCur: %d\ninner: %d",
+				"ev: %d key: %x\ncur: %d scroll: %d scrolledCur: %d len: %d\ninner: %d align: %s",
 				ev.Type, ev.Key, treeView.CurrentSelection, treeView.scroll,
-				treeView.scrolledSelection, treeView.InnerHeight())
+				treeView.scrolledSelection, len(treeView.Items), treeView.InnerHeight(), treeView.Debug)
+			treeView.Debug = ""
 		}
 	}
 }
@@ -117,6 +118,8 @@ type SelectList struct {
 
 	scroll            int
 	scrolledSelection int
+
+	Debug string
 }
 
 func NewSelectList() *SelectList {
@@ -140,6 +143,14 @@ func NewSelectList() *SelectList {
 }
 
 func (s *SelectList) Buffer() []ui.Point {
+	defer func() {
+		if err := recover(); err != nil {
+			ui.Close()
+			fmt.Println(s.Debug)
+			panic(err)
+		}
+	}()
+
 	s.Align()
 
 	ps := s.Block.Buffer()
@@ -158,17 +169,18 @@ func (s *SelectList) Buffer() []ui.Point {
 func (s *SelectList) Align() {
 	s.Block.Align()
 
+	inner := s.InnerHeight() - 1
 	s.scrolledSelection = s.CurrentSelection - s.scroll
-
-	if s.scrolledSelection >= s.InnerHeight() {
-		s.scroll += s.InnerHeight() - s.scrolledSelection + 1
-
-		s.scrolledSelection = s.CurrentSelection - s.scroll
+	s.Debug += fmt.Sprintf("scrolled: %d height: %d  ", s.scrolledSelection, s.InnerHeight())
+	if s.scrolledSelection >= inner {
+		s.Debug += fmt.Sprintf("adjusting scroll %d  ", s.scrolledSelection-inner)
+		s.scroll += s.scrolledSelection - inner
 	} else if s.scrolledSelection < 0 {
-		s.scroll += s.scrolledSelection
-
-		s.scrolledSelection = s.CurrentSelection - s.scroll
+		s.Debug += fmt.Sprintf("adjusting scroll - %d  ", math.AbsI(s.scrolledSelection))
+		s.scroll -= math.AbsI(s.scrolledSelection)
 	}
+	s.Debug += fmt.Sprintf("scrolled: %d  ", s.scrolledSelection)
+	s.scrolledSelection = s.CurrentSelection - s.scroll
 
 	if s.CurrentSelection == 0 {
 		s.upperList.IsDisplay = false

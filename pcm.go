@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"os/user"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"syscall"
@@ -120,6 +121,7 @@ func main() {
 	defer func() {
 		if err := recover(); err != nil {
 			color.Redln(err)
+			debug.PrintStack()
 			os.Exit(1)
 		}
 	}()
@@ -369,7 +371,7 @@ func treeDescend(target *[]string, index map[int]Node, prefix string, node *Cont
 				newPrefix = "│ "
 			} else {
 				nodeSym = "┗"
-				newPrefix = "┃ "
+				newPrefix = "  "
 			}
 		} else {
 			nodeSym = "┣"
