@@ -65,7 +65,7 @@ type Node interface {
 type Container struct {
 	_node
 
-	expanded    bool         `xml:"expanded, attr"`
+	Expanded    bool         `xml:"expanded,attr"`
 	Containers  []Container  `xml:"container"`
 	Connections []Connection `xml:"connection"`
 }
@@ -73,10 +73,11 @@ type Container struct {
 type Connection struct {
 	_node
 
-	Info    Info    `xml:"connection_info"`
-	Login   Login   `xml:"login"`
-	Timeout Timeout `xml:"timeout"`
-	Command Command `xml:"command"`
+	Expanded bool    `xml:""`
+	Info     Info    `xml:"connection_info"`
+	Login    Login   `xml:"login"`
+	Timeout  Timeout `xml:"timeout"`
+	Commands Command `xml:"command"`
 	//TODO Options
 }
 
@@ -170,9 +171,8 @@ func main() {
 		color.Yellow("Password: ")
 		fmt.Println(conn.Login.Password)
 		color.Yellowln("Commands:")
-		for _, v := range conn.Command.Commands {
+		for _, v := range conn.Commands.Commands {
 			fmt.Println(v)
-
 		}
 	}
 	//fmt.Println(conn.Login)
@@ -283,8 +283,8 @@ func connect(c *Connection) {
 			return c.Login.Password
 		}
 		ind := state - 1
-		if len(c.Command.Commands) > ind {
-			return c.Command.Commands[ind]
+		if len(c.Commands.Commands) > ind {
+			return c.Commands.Commands[ind]
 		}
 		return ""
 	}
@@ -344,6 +344,7 @@ func loadConns() (result Configuration) {
 	decoder.CharsetReader = DummyReader
 	p(decoder.Decode(&result), "decoding xml")
 
+	result.Root.Expanded = true
 	return
 }
 
@@ -358,10 +359,14 @@ func treePrint(target *[]string, index map[int]Node, conns *Configuration) {
 	treeDescend(target, index, "", &conns.Root)
 }
 func treeDescend(target *[]string, index map[int]Node, prefix string, node *Container) {
+	if !node.Expanded {
+		return
+	}
 	for i := range node.Containers {
 		nextCont := &node.Containers[i]
 		var nodeSym string
 		var newPrefix string
+		var expand string
 		if i == 0 {
 			nodeSym = "┣"
 			newPrefix = "┃ "
@@ -377,8 +382,13 @@ func treeDescend(target *[]string, index map[int]Node, prefix string, node *Cont
 			nodeSym = "┣"
 			newPrefix = "┃ "
 		}
+		if nextCont.Expanded {
+			expand = "━┓ ▼ "
+		} else {
+			expand = "━┅ ▶ "
+		}
 		index[len(*target)] = nextCont
-		*target = append(*target, prefix+nodeSym+"━┓ "+nextCont.Name)
+		*target = append(*target, prefix+nodeSym+expand+nextCont.Name)
 		treeDescend(target, index, prefix+newPrefix, nextCont)
 	}
 	for i := range node.Connections {

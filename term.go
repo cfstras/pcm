@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/cfstras/go-utils/math"
 	ui "github.com/cfstras/pcm/Godeps/_workspace/src/github.com/gizak/termui"
+	"github.com/cfstras/pcm/Godeps/_workspace/src/github.com/renstrom/fuzzysearch/fuzzy"
 )
 
 func selectConnection(conf *Configuration, input string) *Connection {
@@ -13,9 +14,11 @@ func selectConnection(conf *Configuration, input string) *Connection {
 	defer ui.Close()
 
 	connectionsIndex := make(map[int]Node)
+	//rankings := search
+	//TODO
 
 	treeView := NewSelectList()
-	treePrint(&treeView.Items, connectionsIndex, conf)
+	drawTree(treeView, connectionsIndex, conf)
 	//treeView.Items = []string{"1 one", "2 two", "3 three", "4 four", "5 five",
 	//	"6 six", "7 seven", "8 eight"}
 
@@ -79,9 +82,15 @@ func selectConnection(conf *Configuration, input string) *Connection {
 				n := connectionsIndex[treeView.CurrentSelection]
 				if c, ok := n.(*Connection); ok {
 					return c
-				} else if _, ok := n.(*Container); ok {
-					//TODO expand/unexpand
+				} else if c, ok := n.(*Container); ok {
+					if c.Expanded {
+						c.Expanded = false
+					} else {
+						c.Expanded = true
+					}
+					drawTree(treeView, connectionsIndex, conf)
 				}
+
 			} else if ev.Key == ui.KeyEsc || ev.Key == ui.KeyCtrlC {
 				return nil
 			} else if ev.Ch >= ' ' && ev.Ch <= '~' {
@@ -105,6 +114,22 @@ func selectConnection(conf *Configuration, input string) *Connection {
 			treeView.Debug = ""
 		}
 	}
+}
+
+func drawTree(treeView *SelectList, connectionsIndex map[int]Node, conf *Configuration) {
+	treeView.Items = treeView.Items[:0]
+	treePrint(&treeView.Items, connectionsIndex, conf)
+}
+
+func rank(input string, conf *Configuration) map[Node]int {
+	words := listWords(conf.AllConnections)
+	suggs := fuzzy.RankFind(input, words)
+	res := make(map[Node]int)
+	for _, s := range suggs {
+		conn := conf.AllConnections[s.Source]
+		res[conn] = s.Distance
+	}
+	return res
 }
 
 type SelectList struct {
