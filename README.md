@@ -1,5 +1,5 @@
 # pcm
-a Linux client for PuTTYConnectionManager configurations, with fuzzy searching.
+a Linux SSH client wrapper reading PuTTYConnectionManager configurations, with fuzzy searching.
 
 Supports auto-login with stored passwords and running predefined commands as specified in PuTTYCM 
 
