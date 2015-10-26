@@ -2,12 +2,13 @@ package main
 
 import (
 	"fmt"
-	"github.com/cfstras/go-utils/math"
-	ui "github.com/cfstras/pcm/Godeps/_workspace/src/github.com/gizak/termui"
-	"github.com/cfstras/pcm/Godeps/_workspace/src/github.com/renstrom/fuzzysearch/fuzzy"
 	"os"
 	"runtime/debug"
 	"strings"
+
+	"github.com/cfstras/go-utils/math"
+	ui "github.com/cfstras/pcm/Godeps/_workspace/src/github.com/gizak/termui"
+	"github.com/cfstras/pcm/Godeps/_workspace/src/github.com/renstrom/fuzzysearch/fuzzy"
 )
 
 func selectConnection(conf *Configuration, input string) *Connection {
