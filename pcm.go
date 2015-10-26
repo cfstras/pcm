@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"os/user"
 	"runtime/debug"
 	"sort"
 	"strings"
@@ -131,7 +130,9 @@ func main() {
 	defer func() {
 		if err := recover(); err != nil {
 			color.Redln(err)
-			debug.PrintStack()
+			if DEBUG {
+				debug.PrintStack()
+			}
 			os.Exit(1)
 		}
 	}()
@@ -340,9 +341,14 @@ func DummyReader(label string, input io.Reader) (io.Reader, error) {
 }
 
 func loadConns() (result Configuration) {
-	u, err := user.Current()
-	p(err, "getting user")
-	filename := strings.Replace(connectionsPath, "~", u.HomeDir, -1)
+	filename := connectionsPath
+	if strings.Contains(filename, "~") {
+		homeDir := os.Getenv("HOME")
+		if homeDir == "" {
+			panic("Error: $HOME not set")
+		}
+		filename = strings.Replace(filename, "~", homeDir+"/", -1)
+	}
 	rd, err := os.Open(filename)
 	p(err, "opening "+filename)
 	defer rd.Close()

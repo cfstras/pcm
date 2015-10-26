@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"runtime/debug"
 	"strings"
 
 	"github.com/cfstras/go-utils/math"
@@ -254,16 +252,6 @@ func NewSelectList() *SelectList {
 }
 
 func (s *SelectList) Buffer() []ui.Point {
-	defer func() {
-		if err := recover(); err != nil {
-			ui.Close()
-			fmt.Println(s.Debug)
-			fmt.Println(err)
-			debug.PrintStack()
-			os.Exit(1)
-		}
-	}()
-
 	s.Align()
 
 	ps := s.Block.Buffer()
@@ -288,15 +276,24 @@ func (s *SelectList) Align() {
 
 	inner := s.InnerHeight() - 1
 	s.scrolledSelection = s.CurrentSelection - s.scroll
-	s.Debug += fmt.Sprintf("scrolled: %d height: %d  ", s.scrolledSelection, s.InnerHeight())
+	if DEBUG {
+		s.Debug += fmt.Sprintf("scrolled: %d height: %d  ", s.scrolledSelection, s.InnerHeight())
+	}
+
 	if s.scrolledSelection >= inner {
-		s.Debug += fmt.Sprintf("adjusting scroll %d  ", s.scrolledSelection-inner)
+		if DEBUG {
+			s.Debug += fmt.Sprintf("adjusting scroll %d  ", s.scrolledSelection-inner)
+		}
 		s.scroll += s.scrolledSelection - inner
 	} else if s.scrolledSelection < 0 {
-		s.Debug += fmt.Sprintf("adjusting scroll - %d  ", math.AbsI(s.scrolledSelection))
+		if DEBUG {
+			s.Debug += fmt.Sprintf("adjusting scroll - %d  ", math.AbsI(s.scrolledSelection))
+		}
 		s.scroll -= math.AbsI(s.scrolledSelection)
 	}
-	s.Debug += fmt.Sprintf("scrolled: %d  ", s.scrolledSelection)
+	if DEBUG {
+		s.Debug += fmt.Sprintf("scrolled: %d  ", s.scrolledSelection)
+	}
 	s.scrolledSelection = s.CurrentSelection - s.scroll
 
 	if s.CurrentSelection == 0 {
