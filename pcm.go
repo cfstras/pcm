@@ -383,7 +383,11 @@ func treeDescend(target *[]string, index map[int]Node, prefix string, node *Cont
 			newPrefix = "┃ "
 		}
 		if nextCont.Expanded {
-			expand = "━┓ ▼ "
+			if len(nextCont.Containers) > 0 {
+				expand = "━┓ ▼ "
+			} else {
+				expand = "━┑ ▼ "
+			}
 		} else {
 			expand = "━┅ ▶ "
 		}

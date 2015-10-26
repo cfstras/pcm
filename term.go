@@ -18,25 +18,19 @@ func selectConnection(conf *Configuration, input string) *Connection {
 	//TODO
 
 	treeView := NewSelectList()
+	treeView.Border.Label = " Connections "
 	drawTree(treeView, connectionsIndex, conf)
-	//treeView.Items = []string{"1 one", "2 two", "3 three", "4 four", "5 five",
-	//	"6 six", "7 seven", "8 eight"}
 
 	debugView := ui.NewPar("")
-	debugView.Height = 5
-
-	treeView.Height = ui.TermHeight() - 3 - debugView.Height
 
 	searchView := ui.NewPar(input)
-	searchView.Height = 3
+	searchView.Border.Label = " Search "
 
-	connectButton := ui.NewPar("Connect")
+	connectButton := ui.NewPar(" Connect ")
 	connectButton.TextBgColor = ui.ColorBlue
-	connectButton.Height = 3
 
 	menuView := ui.NewRow(
 		ui.NewCol(12, 0, connectButton))
-	menuView.Height = 3
 
 	ui.Body.AddRows(
 		ui.NewRow(
@@ -46,6 +40,15 @@ func selectConnection(conf *Configuration, input string) *Connection {
 		ui.NewRow(
 			ui.NewCol(6, 0, searchView),
 			ui.NewCol(6, 0, menuView)))
+
+	heights := func() {
+		searchView.Height = 3
+		connectButton.Height = searchView.Height
+		menuView.Height = searchView.Height
+		debugView.Height = 5
+		treeView.Height = ui.TermHeight() - searchView.Height - debugView.Height
+	}
+	heights()
 
 	ui.Body.Align()
 
@@ -57,6 +60,11 @@ func selectConnection(conf *Configuration, input string) *Connection {
 			debugView.Text = ev.Err.Error()
 		}
 		switch ev.Type {
+		case ui.EventResize:
+			heights()
+			ui.Body.Width = ev.Width
+			ui.Body.Align()
+			treeView.Debug += "  resize"
 		case ui.EventKey:
 			if ev.Key <= ui.KeyHome && ev.Key >= ui.KeyArrowRight {
 				switch ev.Key {
