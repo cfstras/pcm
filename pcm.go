@@ -125,6 +125,8 @@ func (l StringList) Len() int           { return len(l) }
 func (l StringList) Swap(i, j int)      { l[i], l[j] = l[j], l[i] }
 func (l StringList) Less(i, j int) bool { return strings.Compare(l[i], l[j]) < 0 }
 
+const DEBUG = false
+
 func main() {
 	defer func() {
 		if err := recover(); err != nil {
@@ -139,7 +141,7 @@ func main() {
 	useFuzzySimple := false
 	flag.BoolVar(&verbose, "verbose", false, "Display more info, such as hostnames and passwords")
 	flag.BoolVar(&verbose, "v", false, "Display more info, such as hostnames and passwords")
-	flag.BoolVar(&useFuzzySimple, "simple", true, "Use simple interface")
+	flag.BoolVar(&useFuzzySimple, "simple", false, "Use simple interface")
 
 	flag.Parse()
 	if pathP != nil {
@@ -362,33 +364,25 @@ func p(err error, where string) {
 	}
 }
 
-func treePrint(target *[]string, index map[int]Node, conns *Configuration, distances map[string]int) {
-	treeDescend(target, index, "", distances, "/", &conns.Root)
+func treePrint(target *[]string, index map[int]Node, node *Container) {
+	if node == nil {
+		return
+	}
+	treeDescend(target, index, "", "/", node)
 }
 func treeDescend(target *[]string, index map[int]Node, prefix string,
-	distances map[string]int, pathPrefix string, node *Container) {
+	pathPrefix string, node *Container) {
 	if !node.Expanded {
 		return
 	}
 	for i := range node.Containers {
 		nextCont := &node.Containers[i]
 		nextPathPrefix := pathPrefix + nextCont.Name + "/"
-		if distances != nil {
-			if pathPrefixInDistances(nextPathPrefix, distances) {
-				nextCont.Expanded = true
-			} else {
-				nextCont.Expanded = false
-				continue
-			}
-		}
 
 		var nodeSym string
 		var newPrefix string
 		var expand string
-		if i == 0 {
-			nodeSym = "┣"
-			newPrefix = "┃ "
-		} else if i == len(node.Containers)-1 {
+		if i == len(node.Containers)-1 {
 			if len(node.Connections) > 0 {
 				nodeSym = "┡"
 				newPrefix = "│ "
@@ -397,8 +391,16 @@ func treeDescend(target *[]string, index map[int]Node, prefix string,
 				newPrefix = "  "
 			}
 		} else {
-			nodeSym = "┣"
-			newPrefix = "┃ "
+			if len(node.Containers) > 0 {
+				nodeSym = "┣"
+				newPrefix = "┃ "
+			} else if len(node.Containers) == 0 {
+				nodeSym = "┗"
+				newPrefix = "  "
+			} else {
+				nodeSym = "┣"
+				newPrefix = "┃ "
+			}
 		}
 		if nextCont.Expanded {
 			if len(nextCont.Containers) > 0 {
@@ -411,14 +413,10 @@ func treeDescend(target *[]string, index map[int]Node, prefix string,
 		}
 		index[len(*target)] = nextCont
 		*target = append(*target, prefix+nodeSym+expand+nextCont.Name)
-		treeDescend(target, index, prefix+newPrefix, distances, nextPathPrefix,
-			nextCont)
+		treeDescend(target, index, prefix+newPrefix, nextPathPrefix, nextCont)
 	}
 	for i := range node.Connections {
 		conn := &node.Connections[i]
-		if distances != nil && !pathPrefixInDistances(pathPrefix+conn.Name, distances) {
-			continue
-		}
 
 		var nodeSym string
 		if i == len(node.Connections)-1 {
@@ -431,15 +429,6 @@ func treeDescend(target *[]string, index map[int]Node, prefix string,
 		index[len(*target)] = conn
 		*target = append(*target, prefix+nodeSym+"─ "+conn.Name)
 	}
-}
-
-func pathPrefixInDistances(nextPathPrefix string, distances map[string]int) bool {
-	for k := range distances {
-		if strings.HasPrefix(k, nextPathPrefix) {
-			return true
-		}
-	}
-	return false
 }
 
 func listConnections(config *Configuration,

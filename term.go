@@ -16,13 +16,8 @@ func selectConnection(conf *Configuration, input string) *Connection {
 		panic(err)
 	}
 	defer ui.Close()
-
-	connectionsIndex := make(map[int]Node)
-	distances := filter(conf, input)
-
 	treeView := NewSelectList()
 	treeView.Border.Label = " Connections "
-	drawTree(treeView, connectionsIndex, distances, conf)
 
 	debugView := ui.NewPar("")
 
@@ -54,6 +49,12 @@ func selectConnection(conf *Configuration, input string) *Connection {
 	heights()
 
 	ui.Body.Align()
+
+	connectionsIndex := make(map[int]Node)
+	distances := filter(conf, input)
+	filteredRoot := filterTree(conf, distances)
+
+	drawTree(treeView, connectionsIndex, distances, filteredRoot)
 
 	events := ui.EventCh()
 	for {
@@ -101,7 +102,7 @@ func selectConnection(conf *Configuration, input string) *Connection {
 					} else {
 						c.Expanded = true
 					}
-					drawTree(treeView, connectionsIndex, distances, conf)
+					drawTree(treeView, connectionsIndex, distances, filteredRoot)
 				}
 
 			} else if ev.Key == ui.KeyEsc || ev.Key == ui.KeyCtrlC {
@@ -122,24 +123,80 @@ func selectConnection(conf *Configuration, input string) *Connection {
 
 		if refilter {
 			distances = filter(conf, input)
-			drawTree(treeView, connectionsIndex, distances, conf)
+			filteredRoot = filterTree(conf, distances)
+			drawTree(treeView, connectionsIndex, distances, filteredRoot)
 		}
 
 		if ev.Err == nil {
-			debugView.Text = fmt.Sprint(distances)
-			debugView.Text += fmt.Sprintf(
-				" ev: %d key: %x input: %s|\ncur: %d scroll: %d scrolledCur: %d len: %d\ninner: %d align: %s",
-				ev.Type, ev.Key, input, treeView.CurrentSelection, treeView.scroll,
-				treeView.scrolledSelection, len(treeView.Items), treeView.InnerHeight(), treeView.Debug)
-			treeView.Debug = ""
+			if DEBUG {
+				debugView.Text = fmt.Sprint(distances)
+				debugView.Text += fmt.Sprintf(
+					" ev: %d key: %x input: %s|\ncur: %d scroll: %d scrolledCur: %d len: %d\ninner: %d align: %s",
+					ev.Type, ev.Key, input, treeView.CurrentSelection, treeView.scroll,
+					treeView.scrolledSelection, len(treeView.Items), treeView.InnerHeight(), treeView.Debug)
+				treeView.Debug = ""
+			} else {
+				n := connectionsIndex[treeView.CurrentSelection]
+				if c, ok := n.(*Connection); ok {
+					debugView.Text = fmt.Sprintf("%s %s:%d\n%s",
+						c.Info.Protocol, c.Info.Host, c.Info.Port, c.Info.Description)
+				} else if _, ok := n.(*Container); ok {
+					debugView.Text = ""
+				}
+			}
 		}
 	}
 }
 
+func filterTree(conf *Configuration, distances map[string]int) *Container {
+	if distances == nil {
+		return &conf.Root
+	}
+	if len(distances) == 0 {
+		return nil
+	}
+	filteredRoot := conf.Root
+	filterTreeDescend("/", &filteredRoot, distances)
+
+	return &filteredRoot
+}
+
+func filterTreeDescend(pathPrefix string, node *Container, distances map[string]int) {
+	newContainers := []Container{}
+	for _, c := range node.Containers { // this implicitly copies the struct
+		nextPathPrefix := pathPrefix + c.Name + "/"
+		if pathPrefixInDistances(nextPathPrefix, distances) {
+			newContainers = append(newContainers, c)
+			nc := &newContainers[len(newContainers)-1]
+			nc.Expanded = true
+			filterTreeDescend(nextPathPrefix, nc,
+				distances)
+		}
+	}
+	newConnections := []Connection{}
+	for _, c := range node.Connections {
+		if pathPrefixInDistances(pathPrefix+c.Name, distances) {
+			newConnections = append(newConnections, c)
+		}
+	}
+
+	node.Containers = newContainers
+	node.Connections = newConnections
+}
+
+func pathPrefixInDistances(nextPathPrefix string, distances map[string]int) bool {
+	for k := range distances {
+		if strings.HasPrefix(k, nextPathPrefix) {
+			return true
+		}
+	}
+	return false
+}
+
 func drawTree(treeView *SelectList, connectionsIndex map[int]Node,
-	distances map[string]int, conf *Configuration) {
+	distances map[string]int, node *Container) {
 	treeView.Items = treeView.Items[:0]
-	treePrint(&treeView.Items, connectionsIndex, conf, distances)
+	treePrint(&treeView.Items, connectionsIndex, node)
 
 	if len(treeView.Items) == 0 {
 		treeView.Items = []string{"   No Results for search... ☹  "}
