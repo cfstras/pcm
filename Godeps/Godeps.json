@@ -7,6 +7,10 @@
 			"Rev": "d0fcdb6f554ec9ca93e1b097f757070a344d3240"
 		},
 		{
+			"ImportPath": "github.com/cfstras/go-utils/math",
+			"Rev": "d0fcdb6f554ec9ca93e1b097f757070a344d3240"
+		},
+		{
 			"ImportPath": "github.com/daviddengcn/go-colortext",
 			"Rev": "3b18c8575a432453d41fdafb340099fff5bba2f7"
 		},
