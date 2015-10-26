@@ -5,6 +5,9 @@ import (
 	"github.com/cfstras/go-utils/math"
 	ui "github.com/cfstras/pcm/Godeps/_workspace/src/github.com/gizak/termui"
 	"github.com/cfstras/pcm/Godeps/_workspace/src/github.com/renstrom/fuzzysearch/fuzzy"
+	"os"
+	"runtime/debug"
+	"strings"
 )
 
 func selectConnection(conf *Configuration, input string) *Connection {
@@ -14,12 +17,11 @@ func selectConnection(conf *Configuration, input string) *Connection {
 	defer ui.Close()
 
 	connectionsIndex := make(map[int]Node)
-	//rankings := search
-	//TODO
+	distances := filter(conf, input)
 
 	treeView := NewSelectList()
 	treeView.Border.Label = " Connections "
-	drawTree(treeView, connectionsIndex, conf)
+	drawTree(treeView, connectionsIndex, distances, conf)
 
 	debugView := ui.NewPar("")
 
@@ -59,6 +61,8 @@ func selectConnection(conf *Configuration, input string) *Connection {
 		if ev.Err != nil {
 			debugView.Text = ev.Err.Error()
 		}
+
+		refilter := false
 		switch ev.Type {
 		case ui.EventResize:
 			heights()
@@ -96,7 +100,7 @@ func selectConnection(conf *Configuration, input string) *Connection {
 					} else {
 						c.Expanded = true
 					}
-					drawTree(treeView, connectionsIndex, conf)
+					drawTree(treeView, connectionsIndex, distances, conf)
 				}
 
 			} else if ev.Key == ui.KeyEsc || ev.Key == ui.KeyCtrlC {
@@ -104,38 +108,54 @@ func selectConnection(conf *Configuration, input string) *Connection {
 			} else if ev.Ch >= ' ' && ev.Ch <= '~' {
 				input += string(ev.Ch)
 				searchView.Text = input
-				//TODO re-filter
+
+				refilter = true
 			} else if ev.Key == ui.KeyBackspace || ev.Key == ui.KeyBackspace2 {
 				if len(input) > 0 {
 					input = input[:len(input)-1]
 					searchView.Text = input
-					//TODO re-filter
+					refilter = true
 				}
 			}
 		}
 
+		if refilter {
+			distances = filter(conf, input)
+			drawTree(treeView, connectionsIndex, distances, conf)
+		}
+
 		if ev.Err == nil {
-			debugView.Text = fmt.Sprintf(
-				"ev: %d key: %x\ncur: %d scroll: %d scrolledCur: %d len: %d\ninner: %d align: %s",
-				ev.Type, ev.Key, treeView.CurrentSelection, treeView.scroll,
+			debugView.Text = fmt.Sprint(distances)
+			debugView.Text += fmt.Sprintf(
+				" ev: %d key: %x input: %s|\ncur: %d scroll: %d scrolledCur: %d len: %d\ninner: %d align: %s",
+				ev.Type, ev.Key, input, treeView.CurrentSelection, treeView.scroll,
 				treeView.scrolledSelection, len(treeView.Items), treeView.InnerHeight(), treeView.Debug)
 			treeView.Debug = ""
 		}
 	}
 }
 
-func drawTree(treeView *SelectList, connectionsIndex map[int]Node, conf *Configuration) {
+func drawTree(treeView *SelectList, connectionsIndex map[int]Node,
+	distances map[string]int, conf *Configuration) {
 	treeView.Items = treeView.Items[:0]
-	treePrint(&treeView.Items, connectionsIndex, conf)
+	treePrint(&treeView.Items, connectionsIndex, conf, distances)
+
+	if len(treeView.Items) == 0 {
+		treeView.Items = []string{"   No Results for search... ☹  "}
+	}
 }
 
-func rank(input string, conf *Configuration) map[Node]int {
-	words := listWords(conf.AllConnections)
-	suggs := fuzzy.RankFind(input, words)
-	res := make(map[Node]int)
+func filter(conf *Configuration, input string) map[string]int {
+	input = strings.Trim(input, " \n\r\t")
+	if input == "" {
+		return nil
+	}
+	connections := listConnections(conf, true)
+	words := listWords(connections)
+	suggs := fuzzy.RankFindFold(input, words)
+	res := make(map[string]int)
 	for _, s := range suggs {
-		conn := conf.AllConnections[s.Source]
-		res[conn] = s.Distance
+		res[s.Target] = s.Distance
 	}
 	return res
 }
@@ -180,7 +200,9 @@ func (s *SelectList) Buffer() []ui.Point {
 		if err := recover(); err != nil {
 			ui.Close()
 			fmt.Println(s.Debug)
-			panic(err)
+			fmt.Println(err)
+			debug.PrintStack()
+			os.Exit(1)
 		}
 	}()
 
@@ -201,6 +223,10 @@ func (s *SelectList) Buffer() []ui.Point {
 
 func (s *SelectList) Align() {
 	s.Block.Align()
+
+	if s.CurrentSelection >= len(s.Items) {
+		s.CurrentSelection = len(s.Items) - 1
+	}
 
 	inner := s.InnerHeight() - 1
 	s.scrolledSelection = s.CurrentSelection - s.scroll

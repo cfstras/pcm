@@ -78,7 +78,7 @@ type Connection struct {
 	Login    Login   `xml:"login"`
 	Timeout  Timeout `xml:"timeout"`
 	Commands Command `xml:"command"`
-	//TODO Options
+	Options  Options `xml:"options"`
 }
 
 type Info struct {
@@ -96,6 +96,7 @@ type Login struct {
 	Password string `xml:"password"`
 }
 
+// Timeouts are in milliseconds
 type Timeout struct {
 	ConnectionTimeout int `xml:"connectiontimeout"`
 	LoginTimeout      int `xml:"logintimeout"`
@@ -105,6 +106,12 @@ type Timeout struct {
 
 type Command struct {
 	Commands []string `xml:",any"`
+}
+
+type Options struct {
+	LoginMacros  bool `xml:"loginmacros"`
+	PostCommands bool `xml:"postCommands"`
+	EndlineChar  int  `xml:"endlinechar"`
 }
 
 var (
@@ -150,7 +157,7 @@ func main() {
 	}
 
 	conns = loadConns()
-	conns.AllConnections = listConnections(&conns)
+	conns.AllConnections = listConnections(&conns, false)
 
 	var conn *Connection
 	if useFuzzySimple {
@@ -205,7 +212,7 @@ func fuzzySimple(conf *Configuration, searchFor string) *Connection {
 			}
 			continue
 		}
-		suggs := fuzzy.RankFind(input, words)
+		suggs := fuzzy.RankFindFold(input, words)
 		if len(suggs) > 1 {
 			sort.Stable(suggs)
 			color.Yellowln("Suggestions:")
@@ -355,15 +362,26 @@ func p(err error, where string) {
 	}
 }
 
-func treePrint(target *[]string, index map[int]Node, conns *Configuration) {
-	treeDescend(target, index, "", &conns.Root)
+func treePrint(target *[]string, index map[int]Node, conns *Configuration, distances map[string]int) {
+	treeDescend(target, index, "", distances, "/", &conns.Root)
 }
-func treeDescend(target *[]string, index map[int]Node, prefix string, node *Container) {
+func treeDescend(target *[]string, index map[int]Node, prefix string,
+	distances map[string]int, pathPrefix string, node *Container) {
 	if !node.Expanded {
 		return
 	}
 	for i := range node.Containers {
 		nextCont := &node.Containers[i]
+		nextPathPrefix := pathPrefix + nextCont.Name + "/"
+		if distances != nil {
+			if pathPrefixInDistances(nextPathPrefix, distances) {
+				nextCont.Expanded = true
+			} else {
+				nextCont.Expanded = false
+				continue
+			}
+		}
+
 		var nodeSym string
 		var newPrefix string
 		var expand string
@@ -393,10 +411,15 @@ func treeDescend(target *[]string, index map[int]Node, prefix string, node *Cont
 		}
 		index[len(*target)] = nextCont
 		*target = append(*target, prefix+nodeSym+expand+nextCont.Name)
-		treeDescend(target, index, prefix+newPrefix, nextCont)
+		treeDescend(target, index, prefix+newPrefix, distances, nextPathPrefix,
+			nextCont)
 	}
 	for i := range node.Connections {
 		conn := &node.Connections[i]
+		if distances != nil && !pathPrefixInDistances(pathPrefix+conn.Name, distances) {
+			continue
+		}
+
 		var nodeSym string
 		if i == len(node.Connections)-1 {
 			nodeSym = "└"
@@ -410,20 +433,34 @@ func treeDescend(target *[]string, index map[int]Node, prefix string, node *Cont
 	}
 }
 
-func listConnections(config *Configuration) map[string]*Connection {
+func pathPrefixInDistances(nextPathPrefix string, distances map[string]int) bool {
+	for k := range distances {
+		if strings.HasPrefix(k, nextPathPrefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func listConnections(config *Configuration,
+	includeDescription bool) map[string]*Connection {
 	conns := make(map[string]*Connection)
-	descendConnections("", config.Root, conns)
+	descendConnections("", config.Root, conns, includeDescription)
 	return conns
 }
 
-func descendConnections(prefix string, node Container, conns map[string]*Connection) {
+func descendConnections(prefix string, node Container,
+	conns map[string]*Connection, includeDescription bool) {
 	for i := range node.Connections {
 		c := &node.Connections[i]
 		key := prefix + "/" + c.Name
+		if includeDescription {
+			key += "  " + c.Info.Description
+		}
 		conns[key] = c
 	}
 	for _, n := range node.Containers {
-		descendConnections(prefix+"/"+n.Name, n, conns)
+		descendConnections(prefix+"/"+n.Name, n, conns, includeDescription)
 	}
 }
 
