@@ -115,7 +115,6 @@ type Options struct {
 
 var (
 	connectionsPath string = "~/Downloads/connections.xml"
-	conns           Configuration
 )
 
 type StringList []string
@@ -159,14 +158,13 @@ func main() {
 		searchFor = flag.Arg(0)
 	}
 
-	conns = loadConns()
-	conns.AllConnections = listConnections(&conns, false)
+	conf := loadConns()
 
 	var conn *Connection
 	if useFuzzySimple {
-		conn = fuzzySimple(&conns, searchFor)
+		conn = fuzzySimple(&conf, searchFor)
 	} else {
-		conn = selectConnection(&conns, searchFor)
+		conn = selectConnection(&conf, searchFor)
 	}
 
 	if conn == nil {
@@ -191,8 +189,7 @@ func main() {
 }
 
 func fuzzySimple(conf *Configuration, searchFor string) *Connection {
-	//treePrint(conns)
-	words := listWords(conns.AllConnections)
+	words := listWords(conf.AllConnections)
 
 	reader := bufio.NewReader(os.Stdin)
 	var found string
@@ -230,7 +227,7 @@ func fuzzySimple(conf *Configuration, searchFor string) *Connection {
 			break
 		}
 	}
-	conn := conns.AllConnections[found]
+	conn := conf.AllConnections[found]
 	return conn
 }
 
@@ -240,31 +237,36 @@ func connect(c *Connection) {
 	cmd.Args = []string{"-v", "-p", fmt.Sprint(c.Info.Port), "-l", c.Login.User, c.Info.Host}
 	color.Yellowln(cmd.Path, cmd.Args)
 
-	outFunc := func(pipe *os.File, name string, nextCommand func() string) {
+	outFunc := func(pipe *os.File, name string, hasNextCommand func() bool,
+		nextCommand func() string) {
 		buf := make([]byte, 1024)
 		for {
+			if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
+				return
+			}
 			n, err := pipe.Read(buf)
 			str := string(buf[:n])
 			fmt.Print(str)
-			if strings.HasSuffix(str, "assword: ") || strings.HasSuffix(str, "$ ") ||
-				strings.HasSuffix(str, "# ") {
+			if hasNextCommand() && (strings.HasSuffix(str, "assword: ") || strings.HasSuffix(str, "$ ") ||
+				strings.HasSuffix(str, "# ")) {
 				answer := nextCommand()
-				if answer != "" {
-					//fmt.Println("writing", answer)
-					pipe.Write([]byte(answer))
-					pipe.Write([]byte("\n"))
-				}
+				//fmt.Println("writing", answer)
+				pipe.Write([]byte(answer))
+				pipe.Write([]byte("\n"))
 			}
 			if err != nil {
+				if err != io.EOF {
+					return
+				}
 				fmt.Println("pipe", name, "error", err)
-				fmt.Println("closing pipe", name, pipe.Close())
 				return
 			}
 		}
 	}
 
-	inFunc := func(pipe io.WriteCloser) {
+	inFunc := func(pipe io.WriteCloser, startWait <-chan bool) {
 		buf := make([]byte, 1024)
+		<-startWait
 		for {
 			n, err := os.Stdin.Read(buf)
 			//fmt.Println("my stdin got", n, string(buf[:n]))
@@ -286,17 +288,28 @@ func connect(c *Connection) {
 		}
 	}
 
+	startWait := make(chan bool)
 	state := 0
+	hasNextCommand := func() bool {
+		return state < 1+len(c.Commands.Commands)
+	}
 	nextCommand := func() string {
+		if !hasNextCommand() {
+			return ""
+		}
+		defer func() {
+			if state >= len(c.Commands.Commands)+1 {
+				select {
+				case startWait <- true:
+				default:
+				}
+			}
+		}()
 		defer func() { state++ }()
 		if state == 0 {
 			return c.Login.Password
 		}
-		ind := state - 1
-		if len(c.Commands.Commands) > ind {
-			return c.Commands.Commands[ind]
-		}
-		return ""
+		return c.Commands.Commands[state-1]
 	}
 
 	sendSize := func(out *os.File, cmd *exec.Cmd) {
@@ -325,8 +338,8 @@ func connect(c *Connection) {
 	p(err, "making terminal raw")
 	defer terminal.Restore(0, oldState)
 
-	go outFunc(pty, "pty", nextCommand)
-	go inFunc(pty)
+	go outFunc(pty, "pty", hasNextCommand, nextCommand)
+	go inFunc(pty, startWait)
 	go signalWatcher(pty, cmd)
 	sendSize(pty, cmd)
 
@@ -359,8 +372,23 @@ func loadConns() (result Configuration) {
 	decoder.CharsetReader = DummyReader
 	p(decoder.Decode(&result), "decoding xml")
 
+	result.AllConnections = listConnections(&result, false)
+	deleteEmptyCommands(&result)
+
 	result.Root.Expanded = true
 	return
+}
+
+func deleteEmptyCommands(conf *Configuration) {
+	for _, conn := range conf.AllConnections {
+		n := []string{}
+		for _, v := range conn.Commands.Commands {
+			if strings.TrimSpace(v) != "" {
+				n = append(n, v)
+			}
+		}
+		conn.Commands.Commands = n
+	}
 }
 
 func p(err error, where string) {
@@ -375,7 +403,9 @@ func treePrint(target *[]string, index map[int]Node, node *Container) {
 		return
 	}
 	treeDescend(target, index, "", "/", node)
+	return
 }
+
 func treeDescend(target *[]string, index map[int]Node, prefix string,
 	pathPrefix string, node *Container) {
 	if !node.Expanded {
@@ -439,12 +469,13 @@ func treeDescend(target *[]string, index map[int]Node, prefix string,
 
 func listConnections(config *Configuration,
 	includeDescription bool) map[string]*Connection {
+
 	conns := make(map[string]*Connection)
-	descendConnections("", config.Root, conns, includeDescription)
+	descendConnections("", &config.Root, conns, includeDescription)
 	return conns
 }
 
-func descendConnections(prefix string, node Container,
+func descendConnections(prefix string, node *Container,
 	conns map[string]*Connection, includeDescription bool) {
 	for i := range node.Connections {
 		c := &node.Connections[i]
@@ -454,8 +485,10 @@ func descendConnections(prefix string, node Container,
 		}
 		conns[key] = c
 	}
-	for _, n := range node.Containers {
-		descendConnections(prefix+"/"+n.Name, n, conns, includeDescription)
+	for i := range node.Containers {
+		n := &node.Containers[i]
+		descendConnections(prefix+"/"+n.Name, n, conns,
+			includeDescription)
 	}
 }
 

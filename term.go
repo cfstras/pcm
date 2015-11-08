@@ -2,9 +2,9 @@ package main
 
 import (
 	"fmt"
+	"github.com/cfstras/go-utils/math"
 	"strings"
 
-	"github.com/cfstras/pcm/Godeps/_workspace/src/github.com/cfstras/go-utils/math"
 	ui "github.com/cfstras/pcm/Godeps/_workspace/src/github.com/gizak/termui"
 	"github.com/cfstras/pcm/Godeps/_workspace/src/github.com/renstrom/fuzzysearch/fuzzy"
 )
@@ -49,10 +49,20 @@ func selectConnection(conf *Configuration, input string) *Connection {
 	ui.Body.Align()
 
 	connectionsIndex := make(map[int]Node)
-	distances := filter(conf, input)
-	filteredRoot := filterTree(conf, distances)
+	var distances map[string]int
+	var filteredRoot *Container
 
-	drawTree(treeView, connectionsIndex, distances, filteredRoot)
+	doRefilter := func() {
+		distances, _ = filter(conf, input)
+		filteredRoot = filterTree(conf, distances)
+		drawTree(treeView, connectionsIndex, distances, filteredRoot)
+		/*if bestMatchPath != "" {
+			if index, ok := pathToIndexMap[bestMatchPath]; ok {
+				treeView.CurrentSelection = index
+			}
+		}*/
+	}
+	doRefilter()
 
 	events := ui.EventCh()
 	for {
@@ -120,9 +130,7 @@ func selectConnection(conf *Configuration, input string) *Connection {
 		}
 
 		if refilter {
-			distances = filter(conf, input)
-			filteredRoot = filterTree(conf, distances)
-			drawTree(treeView, connectionsIndex, distances, filteredRoot)
+			doRefilter()
 		}
 
 		if ev.Err == nil {
@@ -167,8 +175,7 @@ func filterTreeDescend(pathPrefix string, node *Container, distances map[string]
 			newContainers = append(newContainers, c)
 			nc := &newContainers[len(newContainers)-1]
 			nc.Expanded = true
-			filterTreeDescend(nextPathPrefix, nc,
-				distances)
+			filterTreeDescend(nextPathPrefix, nc, distances)
 		}
 	}
 	newConnections := []Connection{}
@@ -201,19 +208,27 @@ func drawTree(treeView *SelectList, connectionsIndex map[int]Node,
 	}
 }
 
-func filter(conf *Configuration, input string) map[string]int {
-	input = strings.Trim(input, " \n\r\t")
+func filter(conf *Configuration, input string) (map[string]int, string) {
+
+	input = strings.TrimSpace(input)
 	if input == "" {
-		return nil
+		return nil, ""
 	}
 	connections := listConnections(conf, true)
 	words := listWords(connections)
 	suggs := fuzzy.RankFindFold(input, words)
 	res := make(map[string]int)
+
+	minDist := math.MaxInt
+	minPath := ""
 	for _, s := range suggs {
+		if s.Distance < minDist {
+			minDist = s.Distance
+			minPath = s.Target
+		}
 		res[s.Target] = s.Distance
 	}
-	return res
+	return res, minPath
 }
 
 type SelectList struct {
