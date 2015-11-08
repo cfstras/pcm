@@ -4,11 +4,11 @@
 	"Deps": [
 		{
 			"ImportPath": "github.com/cfstras/go-utils/color",
-			"Rev": "d0fcdb6f554ec9ca93e1b097f757070a344d3240"
+			"Rev": "1e9354fc5f32c3d8847a8d73d4f858e9f7acc62f"
 		},
 		{
 			"ImportPath": "github.com/cfstras/go-utils/math",
-			"Rev": "d0fcdb6f554ec9ca93e1b097f757070a344d3240"
+			"Rev": "1e9354fc5f32c3d8847a8d73d4f858e9f7acc62f"
 		},
 		{
 			"ImportPath": "github.com/daviddengcn/go-colortext",

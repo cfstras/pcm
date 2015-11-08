@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/cfstras/go-utils/math"
+	"github.com/cfstras/pcm/Godeps/_workspace/src/github.com/cfstras/go-utils/math"
 	"strings"
 
 	ui "github.com/cfstras/pcm/Godeps/_workspace/src/github.com/gizak/termui"

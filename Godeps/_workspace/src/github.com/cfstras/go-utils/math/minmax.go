@@ -1,5 +1,12 @@
 package math
 
+const (
+	MaxUint = ^uint(0)
+	MinUint = 0
+	MaxInt  = int(MaxUint >> 1)
+	MinInt  = -MaxInt - 1
+)
+
 func MaxI(v1 int, val ...int) int {
 	v := v1
 	for _, a := range val {
