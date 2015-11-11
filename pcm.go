@@ -13,6 +13,7 @@ import (
 	"runtime/debug"
 	"sort"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/cfstras/pcm/Godeps/_workspace/src/github.com/cfstras/go-utils/color"
@@ -238,8 +239,8 @@ func connect(c *Connection) {
 	cmd.Args = []string{"-v", "-p", fmt.Sprint(c.Info.Port), "-l", c.Login.User, c.Info.Host}
 	color.Yellowln(cmd.Path, cmd.Args)
 
-	outFunc := func(pipe *os.File, name string, hasNextCommand func() bool,
-		nextCommand func() string) {
+	outFunc := func(pipe *os.File, name string, nextCommand func() *string,
+		startWait *sync.Cond) {
 		buf := make([]byte, 1024)
 		for {
 			if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
@@ -248,12 +249,12 @@ func connect(c *Connection) {
 			n, err := pipe.Read(buf)
 			str := string(buf[:n])
 			fmt.Print(str)
-			if hasNextCommand() && (strings.HasSuffix(str, "assword: ") || strings.HasSuffix(str, "$ ") ||
-				strings.HasSuffix(str, "# ")) {
-				answer := nextCommand()
-				//fmt.Println("writing", answer)
-				pipe.Write([]byte(answer))
-				pipe.Write([]byte("\n"))
+			if strings.HasSuffix(str, "assword: ") || strings.HasSuffix(str, "$ ") ||
+				strings.HasSuffix(str, "# ") {
+				if answer := nextCommand(); answer != nil {
+					pipe.Write([]byte(*answer))
+					pipe.Write([]byte("\n"))
+				}
 			}
 			if strings.HasSuffix(str, "Are you sure you want to continue connecting (yes/no)? ") {
 				pipe.Write([]byte("yes\n"))
@@ -268,36 +269,30 @@ func connect(c *Connection) {
 		}
 	}
 
-	stopWaiting := func(startWait chan<- bool) {
-		select {
-		case startWait <- true:
-		default:
-		}
-	}
-
-	inFunc := func(pipe io.WriteCloser, startWait chan bool) {
+	inFunc := func(pipe io.WriteCloser, startWait *sync.Cond) {
 		input := make(chan []byte, 32)
-		buffers := make(chan []byte, 32)
-		for i := 0; i < 32; i++ {
-			buffers <- make([]byte, 1024)
+		buffers := &sync.Pool{
+			New: func() interface{} { return make([]byte, 1024) },
 		}
-		go func(pipe io.WriteCloser, input chan []byte, startWait chan bool, buffers chan []byte) {
+
+		go func(pipe io.WriteCloser, input chan []byte, startWait *sync.Cond,
+			buffers *sync.Pool) {
 			for {
-				buf := <-buffers
+				buf := buffers.Get().([]byte)
 				n, err := os.Stdin.Read(buf)
 				//fmt.Println("my stdin got", n, string(buf[:n]))
 
 				if err != nil && err != io.EOF {
 					fmt.Println("my stdin got error", err)
 					input <- nil
-					stopWaiting(startWait)
+					startWait.Broadcast()
 					return
 				}
 				var write []byte
 				if err == io.EOF {
 					write = []byte{0x04}
 					input <- nil
-					stopWaiting(startWait)
+					startWait.Broadcast()
 					return
 				}
 				for _, c := range []byte{0x04, 0x03, 0x1a} {
@@ -310,24 +305,19 @@ func connect(c *Connection) {
 					if err != nil {
 						fmt.Println("stdin got error", err)
 						input <- nil
-						stopWaiting(startWait)
+						startWait.Broadcast()
 						return
 					}
+				} else {
+					input <- buf[:n]
 				}
-				input <- buf[:n]
 			}
 		}(pipe, input, startWait, buffers)
 
-		<-startWait
-		for {
-			buf := <-input
-			defer func(buf []byte) {
-				if cap(buf) > 256 {
-					select {
-					case buffers <- buf:
-					}
-				}
-			}(buf)
+		startWait.L.Lock()
+		startWait.Wait()
+		startWait.L.Unlock()
+		for buf := range input {
 			if buf == nil {
 				fmt.Println("closing stdIn:", pipe.Close())
 				return
@@ -339,28 +329,29 @@ func connect(c *Connection) {
 				fmt.Println("closing stdIn:", pipe.Close())
 				return
 			}
+			if cap(buf) > 256 {
+				buffers.Put(buf)
+			}
 		}
 	}
 
-	startWait := make(chan bool)
-	state := 0
-	hasNextCommand := func() bool {
-		return state < 1+len(c.Commands.Commands)
+	startWait := sync.NewCond(&sync.Mutex{})
+
+	commands := make(chan string, len(c.Commands.Commands)+2)
+	commands <- c.Login.Password
+	for _, v := range c.Commands.Commands {
+		if v != "" {
+			commands <- v
+		}
 	}
-	nextCommand := func() string {
-		if !hasNextCommand() {
-			return ""
+	nextCommand := func() *string {
+		if len(commands) > 1 {
+			v := <-commands
+			return &v
+		} else {
+			startWait.Broadcast()
+			return nil
 		}
-		defer func() {
-			state++
-			if state >= len(c.Commands.Commands)+1 {
-				stopWaiting(startWait)
-			}
-		}()
-		if state == 0 {
-			return c.Login.Password
-		}
-		return c.Commands.Commands[state-1]
 	}
 
 	sendSize := func(out *os.File, cmd *exec.Cmd) {
@@ -391,7 +382,7 @@ func connect(c *Connection) {
 	p(err, "making terminal raw")
 	defer terminal.Restore(0, oldState)
 
-	go outFunc(pty, "pty", hasNextCommand, nextCommand)
+	go outFunc(pty, "pty", nextCommand, startWait)
 	go inFunc(pty, startWait)
 	go signalWatcher(pty, cmd)
 	sendSize(pty, cmd)
