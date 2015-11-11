@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/xml"
 	"flag"
 	"fmt"
@@ -254,6 +255,9 @@ func connect(c *Connection) {
 				pipe.Write([]byte(answer))
 				pipe.Write([]byte("\n"))
 			}
+			if strings.HasSuffix(str, "Are you sure you want to continue connecting (yes/no)? ") {
+				pipe.Write([]byte("yes\n"))
+			}
 			if err != nil {
 				if err != io.EOF {
 					return
@@ -264,21 +268,71 @@ func connect(c *Connection) {
 		}
 	}
 
-	inFunc := func(pipe io.WriteCloser, startWait <-chan bool) {
-		buf := make([]byte, 1024)
+	stopWaiting := func(startWait chan<- bool) {
+		select {
+		case startWait <- true:
+		default:
+		}
+	}
+
+	inFunc := func(pipe io.WriteCloser, startWait chan bool) {
+		input := make(chan []byte, 32)
+		buffers := make(chan []byte, 32)
+		for i := 0; i < 32; i++ {
+			buffers <- make([]byte, 1024)
+		}
+		go func(pipe io.WriteCloser, input chan []byte, startWait chan bool, buffers chan []byte) {
+			for {
+				buf := <-buffers
+				n, err := os.Stdin.Read(buf)
+				//fmt.Println("my stdin got", n, string(buf[:n]))
+
+				if err != nil && err != io.EOF {
+					fmt.Println("my stdin got error", err)
+					input <- nil
+					stopWaiting(startWait)
+					return
+				}
+				var write []byte
+				if err == io.EOF {
+					write = []byte{0x04}
+					input <- nil
+					stopWaiting(startWait)
+					return
+				}
+				for _, c := range []byte{0x04, 0x03, 0x1a} {
+					if bytes.Contains(buf[:n], []byte{c}) {
+						write = append(write, c)
+					}
+				}
+				if write != nil {
+					_, err = pipe.Write(write)
+					if err != nil {
+						fmt.Println("stdin got error", err)
+						input <- nil
+						stopWaiting(startWait)
+						return
+					}
+				}
+				input <- buf[:n]
+			}
+		}(pipe, input, startWait, buffers)
+
 		<-startWait
 		for {
-			n, err := os.Stdin.Read(buf)
-			//fmt.Println("my stdin got", n, string(buf[:n]))
-			if err == io.EOF {
-				pipe.Write([]byte{0x04})
-			}
-			if err != nil {
-				fmt.Println("my stdin got error", err)
+			buf := <-input
+			defer func(buf []byte) {
+				if cap(buf) > 256 {
+					select {
+					case buffers <- buf:
+					}
+				}
+			}(buf)
+			if buf == nil {
 				fmt.Println("closing stdIn:", pipe.Close())
 				return
 			}
-			_, err = pipe.Write(buf[:n])
+			_, err := pipe.Write(buf)
 
 			if err != nil {
 				fmt.Println("stdin got error", err)
@@ -298,14 +352,11 @@ func connect(c *Connection) {
 			return ""
 		}
 		defer func() {
+			state++
 			if state >= len(c.Commands.Commands)+1 {
-				select {
-				case startWait <- true:
-				default:
-				}
+				stopWaiting(startWait)
 			}
 		}()
-		defer func() { state++ }()
 		if state == 0 {
 			return c.Login.Password
 		}
@@ -327,7 +378,9 @@ func connect(c *Connection) {
 			if s == syscall.SIGWINCH {
 				sendSize(out, cmd)
 			} else if s == os.Interrupt {
-				out.Write([]byte{0x03})
+				cmd.Process.Signal(syscall.SIGINT)
+			} else if s == syscall.SIGSTOP {
+				cmd.Process.Signal(syscall.SIGSTOP)
 			}
 		}
 	}
