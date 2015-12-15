@@ -7,6 +7,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -14,6 +16,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 
 	"github.com/cfstras/pcm/Godeps/_workspace/src/github.com/cfstras/go-utils/color"
@@ -58,9 +61,12 @@ type Configuration struct {
 type _node struct {
 	Name string `xml:"name,attr"`
 	Type string `xml:"type,attr"`
+
+	path string `xml:""`
 }
 
 type Node interface {
+	Path() string
 }
 
 type Container struct {
@@ -80,6 +86,10 @@ type Connection struct {
 	Timeout  Timeout `xml:"timeout"`
 	Commands Command `xml:"command"`
 	Options  Options `xml:"options"`
+}
+
+func (n *_node) Path() string {
+	return n.path
 }
 
 type Info struct {
@@ -137,6 +147,9 @@ func main() {
 			os.Exit(1)
 		}
 	}()
+	if DEBUG {
+		go http.ListenAndServe(":3000", nil)
+	}
 
 	pathP := flag.String("connectionsPath", connectionsPath, "Path to PuTTY connections.xml")
 	verbose := false
@@ -187,7 +200,15 @@ func main() {
 	}
 	//fmt.Println(conn.Login)
 	//fmt.Println(conn.Command)
-	connect(conn)
+
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt, syscall.SIGWINCH)
+	exit := make(chan bool)
+	console := os.Stdout
+	oldState, err := terminal.MakeRaw(0)
+	p(err, "making terminal raw")
+	defer terminal.Restore(0, oldState)
+	connect(conn, console, os.Stdin, exit, signals, func() *string { return nil })
 }
 
 func fuzzySimple(conf *Configuration, searchFor string) *Connection {
@@ -233,22 +254,24 @@ func fuzzySimple(conf *Configuration, searchFor string) *Connection {
 	return conn
 }
 
-func connect(c *Connection) {
+func connect(c *Connection, console io.Writer, inputConsole io.Reader,
+	exit <-chan bool, signals chan os.Signal, moreCommands func() *string) {
+
 	cmd := &exec.Cmd{}
 	cmd.Path = "/usr/bin/ssh"
 	cmd.Args = []string{"-v", "-p", fmt.Sprint(c.Info.Port), "-l", c.Login.User, c.Info.Host}
-	color.Yellowln(cmd.Path, cmd.Args)
+	var procExit int32 = 0
 
 	outFunc := func(pipe *os.File, name string, nextCommand func() *string,
 		startWait *sync.Cond) {
 		buf := make([]byte, 1024)
 		for {
-			if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
+			if atomic.LoadInt32(&procExit) != 0 {
 				return
 			}
 			n, err := pipe.Read(buf)
 			str := string(buf[:n])
-			fmt.Print(str)
+			fmt.Fprint(console, str)
 			if strings.HasSuffix(str, "assword: ") || strings.HasSuffix(str, "$ ") ||
 				strings.HasSuffix(str, "# ") {
 				if answer := nextCommand(); answer != nil {
@@ -263,13 +286,13 @@ func connect(c *Connection) {
 				if err != io.EOF {
 					return
 				}
-				fmt.Println("pipe", name, "error", err)
+				fmt.Fprintln(console, "pipe", name, "error", err)
 				return
 			}
 		}
 	}
 
-	inFunc := func(pipe io.WriteCloser, startWait *sync.Cond) {
+	inFunc := func(pipe io.WriteCloser, inputConsole io.Reader, startWait *sync.Cond) {
 		input := make(chan []byte, 32)
 		buffers := &sync.Pool{
 			New: func() interface{} { return make([]byte, 1024) },
@@ -279,11 +302,11 @@ func connect(c *Connection) {
 			buffers *sync.Pool) {
 			for {
 				buf := buffers.Get().([]byte)
-				n, err := os.Stdin.Read(buf)
-				//fmt.Println("my stdin got", n, string(buf[:n]))
+				n, err := inputConsole.Read(buf)
+				//fmt.Fprintln(console, "my stdin got", n, string(buf[:n]))
 
 				if err != nil && err != io.EOF {
-					fmt.Println("my stdin got error", err)
+					fmt.Fprintln(console, "my stdin got error", err)
 					input <- nil
 					startWait.Broadcast()
 					return
@@ -303,7 +326,7 @@ func connect(c *Connection) {
 				if write != nil {
 					_, err = pipe.Write(write)
 					if err != nil {
-						fmt.Println("stdin got error", err)
+						fmt.Fprintln(console, "stdin got error", err)
 						input <- nil
 						startWait.Broadcast()
 						return
@@ -319,14 +342,14 @@ func connect(c *Connection) {
 		startWait.L.Unlock()
 		for buf := range input {
 			if buf == nil {
-				fmt.Println("closing stdIn:", pipe.Close())
+				fmt.Fprintln(console, "closing stdIn:", pipe.Close())
 				return
 			}
 			_, err := pipe.Write(buf)
 
 			if err != nil {
-				fmt.Println("stdin got error", err)
-				fmt.Println("closing stdIn:", pipe.Close())
+				fmt.Fprintln(console, "stdin got error", err)
+				fmt.Fprintln(console, "closing stdIn:", pipe.Close())
 				return
 			}
 			if cap(buf) > 256 {
@@ -348,6 +371,8 @@ func connect(c *Connection) {
 		if len(commands) > 1 {
 			v := <-commands
 			return &v
+		} else if c := moreCommands(); c != nil {
+			return c
 		} else {
 			startWait.Broadcast()
 			return nil
@@ -360,9 +385,6 @@ func connect(c *Connection) {
 		C.setsize(C.int(out.Fd()), row, col)
 		cmd.Process.Signal(syscall.SIGWINCH)
 	}
-
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, os.Interrupt, syscall.SIGWINCH)
 
 	signalWatcher := func(out *os.File, cmd *exec.Cmd) {
 		for s := range signals {
@@ -378,18 +400,24 @@ func connect(c *Connection) {
 
 	pty, err := pty.Start(cmd)
 	p(err, "starting ssh")
-	oldState, err := terminal.MakeRaw(0)
-	p(err, "making terminal raw")
-	defer terminal.Restore(0, oldState)
 
 	go outFunc(pty, "pty", nextCommand, startWait)
-	go inFunc(pty, startWait)
+	go inFunc(pty, inputConsole, startWait)
 	go signalWatcher(pty, cmd)
 	sendSize(pty, cmd)
 
+	go func(exit <-chan bool) {
+		for _ = range exit {
+			err := cmd.Process.Kill()
+			p(err, "Killing ssh process")
+			return
+		}
+	}(exit)
+
 	err = cmd.Wait()
+	atomic.StoreInt32(&procExit, 1)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("SSH Process ended:", err)
 	}
 }
 
@@ -442,16 +470,18 @@ func p(err error, where string) {
 	}
 }
 
-func treePrint(target *[]string, index map[int]Node, node *Container) {
+func treePrint(target *[]string, index map[int]Node, pathToIndexMap map[string]int,
+	node *Container) {
 	if node == nil {
 		return
 	}
-	treeDescend(target, index, "", "/", node)
+	treeDescend(target, index, pathToIndexMap, "", "/", node)
 	return
 }
 
-func treeDescend(target *[]string, index map[int]Node, prefix string,
-	pathPrefix string, node *Container) {
+func treeDescend(target *[]string, index map[int]Node, pathToIndexMap map[string]int,
+	prefix string, pathPrefix string, node *Container) {
+
 	if !node.Expanded {
 		return
 	}
@@ -492,12 +522,14 @@ func treeDescend(target *[]string, index map[int]Node, prefix string,
 			expand = "━┅ ▶ "
 		}
 		index[len(*target)] = nextCont
+		if pathToIndexMap != nil {
+			pathToIndexMap[nextCont.Path()] = len(*target)
+		}
 		*target = append(*target, prefix+nodeSym+expand+nextCont.Name)
-		treeDescend(target, index, prefix+newPrefix, nextPathPrefix, nextCont)
+		treeDescend(target, index, pathToIndexMap, prefix+newPrefix, nextPathPrefix, nextCont)
 	}
 	for i := range node.Connections {
 		conn := &node.Connections[i]
-
 		var nodeSym string
 		if i == len(node.Connections)-1 {
 			nodeSym = "└"
@@ -507,6 +539,9 @@ func treeDescend(target *[]string, index map[int]Node, prefix string,
 			nodeSym = "┌"
 		}
 		index[len(*target)] = conn
+		if pathToIndexMap != nil {
+			pathToIndexMap[conn.Path()] = len(*target)
+		}
 		*target = append(*target, prefix+nodeSym+"─ "+conn.Name)
 	}
 }
@@ -521,6 +556,7 @@ func listConnections(config *Configuration,
 
 func descendConnections(prefix string, node *Container,
 	conns map[string]*Connection, includeDescription bool) {
+	node.path = prefix
 	for i := range node.Connections {
 		c := &node.Connections[i]
 		key := prefix + "/" + c.Name
@@ -528,6 +564,7 @@ func descendConnections(prefix string, node *Container,
 			key += "  " + c.Info.Description
 		}
 		conns[key] = c
+		c.path = key
 	}
 	for i := range node.Containers {
 		n := &node.Containers[i]

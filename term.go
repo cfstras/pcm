@@ -2,8 +2,13 @@ package main
 
 import (
 	"fmt"
-	"github.com/cfstras/pcm/Godeps/_workspace/src/github.com/cfstras/go-utils/math"
+	"os"
+	"regexp"
+	"strconv"
 	"strings"
+	"time"
+
+	"github.com/cfstras/pcm/Godeps/_workspace/src/github.com/cfstras/go-utils/math"
 
 	ui "github.com/cfstras/pcm/Godeps/_workspace/src/github.com/gizak/termui"
 	"github.com/cfstras/pcm/Godeps/_workspace/src/github.com/renstrom/fuzzysearch/fuzzy"
@@ -13,7 +18,12 @@ func selectConnection(conf *Configuration, input string) *Connection {
 	if err := ui.Init(); err != nil {
 		panic(err)
 	}
-	defer ui.Close()
+	defer func() {
+		ui.Close()
+		if e := recover(); e != nil {
+			panic(e)
+		}
+	}()
 	treeView := NewSelectList()
 	treeView.Border.Label = " Connections "
 
@@ -23,10 +33,28 @@ func selectConnection(conf *Configuration, input string) *Connection {
 	searchView.Border.Label = " Search "
 
 	connectButton := ui.NewPar(" Connect ")
-	connectButton.TextBgColor = ui.ColorBlue
+
+	loadButton := ui.NewPar(" Show Load ")
 
 	menuView := ui.NewRow(
-		ui.NewCol(12, 0, connectButton))
+		ui.NewCol(8, 0, connectButton),
+		ui.NewCol(4, 0, loadButton),
+	)
+
+	selectedButton := 0
+	buttons := []*ui.Par{connectButton, loadButton}
+
+	selectButtons := func() {
+		selectedButton %= len(buttons)
+		for i, v := range buttons {
+			if i == selectedButton {
+				v.TextBgColor = ui.ColorBlue
+			} else {
+				v.TextBgColor = ui.ColorDefault
+			}
+		}
+	}
+	selectButtons()
 
 	ui.Body.AddRows(
 		ui.NewRow(
@@ -40,6 +68,7 @@ func selectConnection(conf *Configuration, input string) *Connection {
 	heights := func() {
 		searchView.Height = 3
 		connectButton.Height = searchView.Height
+		loadButton.Height = searchView.Height
 		menuView.Height = searchView.Height
 		debugView.Height = 5
 		treeView.Height = ui.TermHeight() - searchView.Height - debugView.Height
@@ -49,13 +78,15 @@ func selectConnection(conf *Configuration, input string) *Connection {
 	ui.Body.Align()
 
 	connectionsIndex := make(map[int]Node)
+	pathToIndexMap := make(map[string]int)
 	var distances map[string]int
 	var filteredRoot *Container
 
 	doRefilter := func() {
+		pathToIndexMap := make(map[string]int)
 		distances, _ = filter(conf, input)
 		filteredRoot = filterTree(conf, distances)
-		drawTree(treeView, connectionsIndex, distances, filteredRoot)
+		drawTree(treeView, connectionsIndex, distances, pathToIndexMap, filteredRoot)
 		/*if bestMatchPath != "" {
 			if index, ok := pathToIndexMap[bestMatchPath]; ok {
 				treeView.CurrentSelection = index
@@ -64,7 +95,102 @@ func selectConnection(conf *Configuration, input string) *Connection {
 	}
 	doRefilter()
 
-	events := ui.EventCh()
+	events := make(chan ui.Event)
+
+	var maxLoad float32 = 0.01
+	allLoads := make(map[string][]float32)
+	exits := make(map[string]chan<- bool)
+	showLoad := func(path string, conn *Connection) {
+		if _, ok := allLoads[path]; ok {
+			return
+		}
+		loads := make([]float32, treeView.InnerWidth()-len([]rune(treeView.Items[pathToIndexMap[path]]))-2)
+		allLoads[path] = loads
+
+		loadChan := make(chan float32, 1)
+		go func() {
+			out, in := NewBuffer(), NewBuffer()
+			exit := make(chan bool)
+			exits[path] = exit
+
+			signals := make(chan os.Signal, 1)
+			go connect(conn, out, in, exit, signals, func() *string {
+				a := "cat /proc/loadavg"
+				return &a
+			})
+			line := make([]byte, 1024)
+			pos := 0
+			re := regexp.MustCompile(`(\d+\.\d+)\s(\d+\.\d+)\s(\d+\.\d+)`)
+			for exits[path] != nil {
+				l, err := out.Read(line[pos:])
+				str := string(line[:pos])
+				pos += l
+				p(err, "reading from load connection "+conn.Name+": "+str)
+				//fmt.Println("got:", pos, str)
+				if res := re.FindStringSubmatch(str); res != nil {
+					//fmt.Println("found:", res[1])
+					pos = 0
+					load, err := strconv.ParseFloat(res[1], 32)
+					if err == nil {
+						loadChan <- float32(load)
+					} else {
+						fmt.Println("error parsing load:", res[1], err)
+					}
+					time.Sleep(300 * time.Millisecond)
+				}
+			}
+			close(loadChan)
+		}()
+
+		originalLine := treeView.Items[pathToIndexMap[path]]
+		title := " Connections "
+
+	forloop:
+		for i := 0; true; i++ {
+			select {
+			case l := <-loadChan:
+				loadChan <- l
+				break forloop
+			default:
+				nums := make([]float32, 8)
+				i %= len(nums)
+				for i2 := 0; i2 < len(nums); i2++ {
+					nums[i2] = float32((i2 + i) % len(nums))
+				}
+				line := Sparkline(nums, float32(0), float32(len(nums)))
+				spaces := treeView.InnerWidth() - len([]rune(originalLine)) - len([]rune(line))
+				treeView.Items[pathToIndexMap[path]] = originalLine + strings.Repeat(" ", spaces) + line
+				events <- ui.Event{Type: ui.EventNone}
+				time.Sleep(100 * time.Millisecond)
+			}
+		}
+
+		for newLoad := range loadChan {
+			for i := range loads {
+				if i > 0 {
+					loads[i-1] = loads[i]
+				}
+			}
+			loads[len(loads)-1] = newLoad
+			if newLoad > maxLoad {
+				maxLoad = newLoad
+			}
+			line := Sparkline(loads, 0, maxLoad)
+			treeView.Items[pathToIndexMap[path]] = originalLine + "  " + line
+			maxStr := fmt.Sprintf("Max Load: %6.3f ", maxLoad)
+			spaces := treeView.InnerWidth() - len([]rune(title)) - len([]rune(maxStr))
+			treeView.Border.Label = title + strings.Repeat(" ", spaces) + maxStr
+
+			events <- ui.Event{Type: ui.EventNone}
+		}
+	}
+
+	go func(in <-chan ui.Event, out chan<- ui.Event) {
+		for e := range in {
+			out <- e
+		}
+		close(out)
+	}(ui.EventCh(), events)
 	for {
 		ui.Render(ui.Body)
 		ev := <-events
@@ -94,6 +220,12 @@ func selectConnection(conf *Configuration, input string) *Connection {
 					treeView.CurrentSelection++
 				case ui.KeyArrowUp:
 					treeView.CurrentSelection--
+				case ui.KeyArrowLeft:
+					selectedButton--
+					selectButtons()
+				case ui.KeyArrowRight:
+					selectedButton++
+					selectButtons()
 				}
 				if treeView.CurrentSelection > len(treeView.Items)-1 {
 					treeView.CurrentSelection = len(treeView.Items) - 1
@@ -103,14 +235,26 @@ func selectConnection(conf *Configuration, input string) *Connection {
 			} else if ev.Key == ui.KeyEnter {
 				n := connectionsIndex[treeView.CurrentSelection]
 				if c, ok := n.(*Connection); ok {
-					return c
+					if buttons[selectedButton] == connectButton {
+						return c
+					} else if buttons[selectedButton] == loadButton {
+						go showLoad(c.Path(), c)
+						defer func(path string) {
+							if exits[path] == nil {
+								return
+							}
+							exits[path] <- true
+							close(exits[path])
+							exits[path] = nil
+						}(c.Path())
+					}
 				} else if c, ok := n.(*Container); ok {
 					if c.Expanded {
 						c.Expanded = false
 					} else {
 						c.Expanded = true
 					}
-					drawTree(treeView, connectionsIndex, distances, filteredRoot)
+					drawTree(treeView, connectionsIndex, distances, pathToIndexMap, filteredRoot)
 				}
 
 			} else if ev.Key == ui.KeyEsc || ev.Key == ui.KeyCtrlC {
@@ -199,9 +343,9 @@ func pathPrefixInDistances(nextPathPrefix string, distances map[string]int) bool
 }
 
 func drawTree(treeView *SelectList, connectionsIndex map[int]Node,
-	distances map[string]int, node *Container) {
+	distances map[string]int, pathToIndexMap map[string]int, node *Container) {
 	treeView.Items = treeView.Items[:0]
-	treePrint(&treeView.Items, connectionsIndex, node)
+	treePrint(&treeView.Items, connectionsIndex, pathToIndexMap, node)
 
 	if len(treeView.Items) == 0 {
 		treeView.Items = []string{"   No Results for search... ☹  "}
