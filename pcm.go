@@ -408,6 +408,9 @@ func connect(c *Connection, console io.Writer, inputConsole io.Reader,
 
 	go func(exit <-chan bool) {
 		for _ = range exit {
+			if atomic.LoadInt32(&procExit) != 0 {
+				return
+			}
 			err := cmd.Process.Kill()
 			p(err, "Killing ssh process")
 			return
