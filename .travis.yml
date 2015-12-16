@@ -1,13 +1,26 @@
+os:
+- linux
+- osx
 before_install:
- - sudo apt-get update -qq
- - sudo apt-get install -y libc6-dev-i386
-
+- sudo apt-get update -qq || brew update
+- sudo apt-get install -y libc6-dev-i386 || which brew
 language: go
 go:
-  - 1.5
-  - 1.5.1
-  - tip
-
+- 1.5
+- 1.5.1
+- tip
 script:
- - go get -t -v ./...
- - ./buildall.sh
+- go get -t -v ./...
+- ./buildall.sh
+deploy:
+  provider: s3
+  access_key_id: AKIAJTJB4JEMUSIXJMSA
+  secret_access_key:
+    secure: v45xaTf9c1Kby2ovMCyzRssv1MgJ3C8JEs7KKokVqRZ1s1JsIU+qqtWw779wfbth1AczqBit7uMRCHL4vWxaqmFrGrTlEfh2Ba6QMfrf9/AtBU2YF09SmJFd3YxcFheQFeVsa9lk9052PUqWwExAVo8erf2i6Dp68km/wJELPUezNdLaQKrBzd3SeuuEuCAnUSSMTJll/rJpHqoqpNVjdDsLAK4PBeCxelIViZ9AAmerEO5TSx0HuwYBQ1SDFOwHYqyel+EgzpuoTQ/dGGa3Lc8YgNJloggeozVHB+zBy6FYDQeA63+l1LsyUAGbUOM4SMw35j1STfKFqedeQu7l6D0P7fNd/lJjqyTkDpn8cEOF7l/gGRVXBUpa1RBXKYzuHd6U+P5QOsHjue3Apgit24APUkDmADdJgRkdYTnLgV/kTVSjSzTw74AptuxVuurx/XVcBWAIKxC7ORuDCyY/etJb4Mt38LNvX52u7ZPcajluTxLDyKYNLM+01vG6Vw5mzFMT/qlEpZCWobXqzQuhV/apBm6YuUW5ni2XygJ9hzHSGFZ8L2TX55lZrZObBUOIgprqgOqmjv61eyqx/YdBKzQwm0tRuC1Tp/UN8NW0C9Xiii8JoMzzThC4T7vm7VqsRrD7oU4ZzW4tCqadX0o7lr1638a0wE6Y0LDBcu0lq5I=
+  bucket: cfs-travis
+  skip_cleanup: true
+  acl: public_read
+  region: eu-west-1
+  local_dir: build
+  detect_encoding: true
+  upload-dir: "cfstras/pcm"
