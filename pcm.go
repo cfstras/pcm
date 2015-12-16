@@ -62,7 +62,9 @@ type _node struct {
 	Name string `xml:"name,attr"`
 	Type string `xml:"type,attr"`
 
-	path string `xml:""`
+	path       string `xml:""`
+	treeView   string `xml:""`
+	statusInfo string `xml:""`
 }
 
 type Node interface {
@@ -420,7 +422,7 @@ func connect(c *Connection, console io.Writer, inputConsole io.Reader,
 	err = cmd.Wait()
 	atomic.StoreInt32(&procExit, 1)
 	if err != nil {
-		fmt.Println("SSH Process ended:", err)
+		fmt.Fprintln(console, "SSH Process ended:", err)
 	}
 }
 
@@ -474,16 +476,16 @@ func p(err error, where string) {
 }
 
 func treePrint(target *[]string, index map[int]Node, pathToIndexMap map[string]int,
-	node *Container) {
+	node *Container, width int) {
 	if node == nil {
 		return
 	}
-	treeDescend(target, index, pathToIndexMap, "", "/", node)
+	treeDescend(target, index, pathToIndexMap, "", "/", node, width)
 	return
 }
 
 func treeDescend(target *[]string, index map[int]Node, pathToIndexMap map[string]int,
-	prefix string, pathPrefix string, node *Container) {
+	prefix string, pathPrefix string, node *Container, width int) {
 
 	if !node.Expanded {
 		return
@@ -528,8 +530,18 @@ func treeDescend(target *[]string, index map[int]Node, pathToIndexMap map[string
 		if pathToIndexMap != nil {
 			pathToIndexMap[nextCont.Path()] = len(*target)
 		}
-		*target = append(*target, prefix+nodeSym+expand+nextCont.Name)
-		treeDescend(target, index, pathToIndexMap, prefix+newPrefix, nextPathPrefix, nextCont)
+		str := prefix + nodeSym + expand + nextCont.Name
+		nextCont.treeView = str
+
+		spaces := width - len([]rune(str)) - len([]rune(nextCont.statusInfo))
+		if spaces > 0 {
+			str += strings.Repeat(" ", spaces)
+		}
+		str += nextCont.statusInfo
+
+		*target = append(*target, str)
+		treeDescend(target, index, pathToIndexMap, prefix+newPrefix,
+			nextPathPrefix, nextCont, width)
 	}
 	for i := range node.Connections {
 		conn := &node.Connections[i]
@@ -545,7 +557,16 @@ func treeDescend(target *[]string, index map[int]Node, pathToIndexMap map[string
 		if pathToIndexMap != nil {
 			pathToIndexMap[conn.Path()] = len(*target)
 		}
-		*target = append(*target, prefix+nodeSym+"─ "+conn.Name)
+		str := prefix + nodeSym + "─ " + conn.Name
+		conn.treeView = str
+
+		spaces := width - len([]rune(str)) - len([]rune(conn.statusInfo))
+		if spaces > 0 {
+			str += strings.Repeat(" ", spaces)
+		}
+		str += conn.statusInfo
+
+		*target = append(*target, str)
 	}
 }
 

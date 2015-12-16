@@ -100,14 +100,16 @@ func selectConnection(conf *Configuration, input string) *Connection {
 	var maxLoad float32 = 0.01
 	allLoads := make(map[string][]float32)
 	exits := make(map[string]chan<- bool)
-	showLoad := func(path string, conn *Connection) {
+	showLoad := func(conn *Connection) {
+		path := conn.Path()
 		if _, ok := allLoads[path]; ok {
 			return
 		}
-		loads := make([]float32, treeView.InnerWidth()-len([]rune(treeView.Items[pathToIndexMap[path]]))-2)
+		loads := make([]float32, 128)
 		allLoads[path] = loads
 
 		loadChan := make(chan float32, 1)
+		waiting := true
 		go func() {
 			out, in := NewBuffer(), NewBuffer()
 			exit := make(chan bool)
@@ -126,40 +128,48 @@ func selectConnection(conf *Configuration, input string) *Connection {
 				str := string(line[:pos])
 				pos += l
 				p(err, "reading from load connection "+conn.Name+": "+str)
-				//fmt.Println("got:", pos, str)
 				if res := re.FindStringSubmatch(str); res != nil {
-					//fmt.Println("found:", res[1])
 					pos = 0
 					load, err := strconv.ParseFloat(res[1], 32)
 					if err == nil {
+						waiting = false
 						loadChan <- float32(load)
 					} else {
-						fmt.Println("error parsing load:", res[1], err)
+						conn.statusInfo = fmt.Sprintln("error parsing load:", res[1], err)
+						drawTree(treeView, connectionsIndex, distances, pathToIndexMap, filteredRoot)
+						events <- ui.Event{Type: ui.EventNone}
 					}
 					time.Sleep(300 * time.Millisecond)
+				} else if waiting {
+					l := strings.SplitN(string(line), "\n", -1)
+					if len(l) > 1 {
+						waiting = false
+						conn.statusInfo = strings.TrimSpace(l[len(l)-2])
+						drawTree(treeView, connectionsIndex, distances, pathToIndexMap, filteredRoot)
+						events <- ui.Event{Type: ui.EventNone}
+					}
 				}
 			}
 			close(loadChan)
 		}()
 
-		originalLine := treeView.Items[pathToIndexMap[path]]
 		title := " Connections "
-
 	forloop:
-		for i := 0; true; i++ {
+		for i := 0; waiting; i++ {
 			select {
 			case l := <-loadChan:
 				loadChan <- l
 				break forloop
 			default:
-				nums := make([]float32, 8)
+				nums := make([]float32, 16)
 				i %= len(nums)
 				for i2 := 0; i2 < len(nums); i2++ {
 					nums[i2] = float32((i2 + i) % len(nums))
 				}
 				line := Sparkline(nums, float32(0), float32(len(nums)))
-				spaces := treeView.InnerWidth() - len([]rune(originalLine)) - len([]rune(line))
-				treeView.Items[pathToIndexMap[path]] = originalLine + strings.Repeat(" ", spaces) + line
+				conn.statusInfo = line
+
+				drawTree(treeView, connectionsIndex, distances, pathToIndexMap, filteredRoot)
 				events <- ui.Event{Type: ui.EventNone}
 				time.Sleep(100 * time.Millisecond)
 			}
@@ -175,12 +185,18 @@ func selectConnection(conf *Configuration, input string) *Connection {
 			if newLoad > maxLoad {
 				maxLoad = newLoad
 			}
-			line := Sparkline(loads, 0, maxLoad)
-			treeView.Items[pathToIndexMap[path]] = originalLine + "  " + line
-			maxStr := fmt.Sprintf("Max Load: %6.3f ", maxLoad)
-			spaces := treeView.InnerWidth() - len([]rune(title)) - len([]rune(maxStr))
-			treeView.Border.Label = title + strings.Repeat(" ", spaces) + maxStr
+			width := treeView.InnerWidth() - len([]rune(conn.treeView)) - 2
+			width = math.MinI(width, len(loads))
+			width = math.MaxI(width, 0)
+			line := Sparkline(loads[:width], 0, maxLoad)
+			conn.statusInfo = line
 
+			maxStr := fmt.Sprintf(" Max Load: %6.3f ", maxLoad)
+			dashes := treeView.InnerWidth() - len([]rune(title)) - len([]rune(maxStr))
+			dashes = math.MaxI(dashes, 0)
+			treeView.Border.Label = title + strings.Repeat("─", dashes) + maxStr
+
+			drawTree(treeView, connectionsIndex, distances, pathToIndexMap, filteredRoot)
 			events <- ui.Event{Type: ui.EventNone}
 		}
 	}
@@ -238,7 +254,7 @@ func selectConnection(conf *Configuration, input string) *Connection {
 					if buttons[selectedButton] == connectButton {
 						return c
 					} else if buttons[selectedButton] == loadButton {
-						go showLoad(c.Path(), c)
+						go showLoad(c)
 						defer func(path string) {
 							if exits[path] == nil {
 								return
@@ -344,11 +360,13 @@ func pathPrefixInDistances(nextPathPrefix string, distances map[string]int) bool
 
 func drawTree(treeView *SelectList, connectionsIndex map[int]Node,
 	distances map[string]int, pathToIndexMap map[string]int, node *Container) {
-	treeView.Items = treeView.Items[:0]
-	treePrint(&treeView.Items, connectionsIndex, pathToIndexMap, node)
+	items := make([]string, 0, len(treeView.Items))
+	treePrint(&items, connectionsIndex, pathToIndexMap, node, treeView.InnerWidth())
 
-	if len(treeView.Items) == 0 {
+	if len(items) == 0 {
 		treeView.Items = []string{"   No Results for search... ☹  "}
+	} else {
+		treeView.Items = items
 	}
 }
 
