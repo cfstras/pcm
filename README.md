@@ -33,13 +33,37 @@ If you don't have Golang installed or don't want to build yourself (try it, it's
 
 # Installing
 
-- Ensure you have a `$GOPATH` set and `$GOPATH/bin` is included in your `$PATH`
-- Install:
-```bash
-$ go get github.com/cfstras/pcm
-```
-- Move your PuTTY `connections.xml` to `~/Downloads/` (or supply `-connectionsPath path/to/your/.xml` to pcm)
-- Run:
-```bash
-$ pcm [search-string]  # search string is optional.
-```
+Once you have Golang, (go to https://golang.org/dl/ or install with homebrew: '''brew install go''')
+- Set a `GOPATH` and include `$GOPATH/bin` in your `$PATH` (put these instructions in your `.bashrc`):
+
+    export GOPATH=$HOME/go
+    export PATH=$PATH:$GOPATH/bin
+
+Install the software:
+
+    go get github.com/cfstras/pcm
+
+The binary will be at `$GOPATH/bin/pcm`, and will search for a connections.xml to be in $HOME/Downloads/.
+
+To invoke:
+
+    pcm                          # open the UI
+    pcm my-node                   # Open the UI, prefill the search box with "my-node"
+
+Once you have the UI, use arrow keys to navigate, type to search, and press enter to connect.
+
+## Arguments
+
+    -connectionsPath path/to/xml # to override the search path to connections.xml
+    -verbose/-v                  # display full info (with password) and hostname before connecting
+    -simple                      # disable UI
+
+
+Hint: If you don't want to put your connections.xml into Downloads, put this alias in your `~/.bashrc`:
+
+    alias pcm="$GOPATH/bin/pcm -connectionsPath $HOME/secret/connections.xml"
+
+
+## Misc.
+There is also a preliminary feature to show load graphs for displayed nodes. The UI does not really fare well with it (searching after activating messes it up), but it's useful to monitor reboots or a stress test.
+
