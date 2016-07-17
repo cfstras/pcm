@@ -9,12 +9,13 @@ import (
 	"time"
 
 	"github.com/cfstras/pcm/Godeps/_workspace/src/github.com/cfstras/go-utils/math"
+	"github.com/cfstras/pcm/types"
 
 	ui "github.com/cfstras/pcm/Godeps/_workspace/src/github.com/gizak/termui"
 	"github.com/cfstras/pcm/Godeps/_workspace/src/github.com/renstrom/fuzzysearch/fuzzy"
 )
 
-func selectConnection(conf *Configuration, input string) *Connection {
+func selectConnection(conf *types.Configuration, input string) *types.Connection {
 	if err := ui.Init(); err != nil {
 		panic(err)
 	}
@@ -77,10 +78,10 @@ func selectConnection(conf *Configuration, input string) *Connection {
 
 	ui.Body.Align()
 
-	connectionsIndex := make(map[int]Node)
+	connectionsIndex := make(map[int]types.Node)
 	pathToIndexMap := make(map[string]int)
 	var distances map[string]int
-	var filteredRoot *Container
+	var filteredRoot *types.Container
 
 	doRefilter := func() {
 		pathToIndexMap := make(map[string]int)
@@ -100,7 +101,7 @@ func selectConnection(conf *Configuration, input string) *Connection {
 	var maxLoad float32 = 0.01
 	allLoads := make(map[string][]float32)
 	exits := make(map[string]chan<- bool)
-	showLoad := func(conn *Connection) {
+	showLoad := func(conn *types.Connection) {
 		path := conn.Path()
 		if _, ok := allLoads[path]; ok {
 			return
@@ -135,7 +136,7 @@ func selectConnection(conf *Configuration, input string) *Connection {
 						waiting = false
 						loadChan <- float32(load)
 					} else {
-						conn.statusInfo = fmt.Sprintln("error parsing load:", res[1], err)
+						conn.StatusInfo = fmt.Sprintln("error parsing load:", res[1], err)
 						drawTree(treeView, connectionsIndex, distances, pathToIndexMap, filteredRoot)
 						events <- ui.Event{Type: ui.EventNone}
 					}
@@ -144,7 +145,7 @@ func selectConnection(conf *Configuration, input string) *Connection {
 					l := strings.SplitN(string(line), "\n", -1)
 					if len(l) > 1 {
 						waiting = false
-						conn.statusInfo = strings.TrimSpace(l[len(l)-2])
+						conn.StatusInfo = strings.TrimSpace(l[len(l)-2])
 						drawTree(treeView, connectionsIndex, distances, pathToIndexMap, filteredRoot)
 						events <- ui.Event{Type: ui.EventNone}
 					}
@@ -167,7 +168,7 @@ func selectConnection(conf *Configuration, input string) *Connection {
 					nums[i2] = float32((i2 + i) % len(nums))
 				}
 				line := Sparkline(nums, float32(0), float32(len(nums)))
-				conn.statusInfo = line
+				conn.StatusInfo = line
 
 				drawTree(treeView, connectionsIndex, distances, pathToIndexMap, filteredRoot)
 				events <- ui.Event{Type: ui.EventNone}
@@ -185,11 +186,11 @@ func selectConnection(conf *Configuration, input string) *Connection {
 			if newLoad > maxLoad {
 				maxLoad = newLoad
 			}
-			width := treeView.InnerWidth() - len([]rune(conn.treeView)) - 2
+			width := treeView.InnerWidth() - len([]rune(conn.TreeView)) - 2
 			width = math.MinI(width, len(loads))
 			width = math.MaxI(width, 0)
 			line := Sparkline(loads[:width], 0, maxLoad)
-			conn.statusInfo = line
+			conn.StatusInfo = line
 
 			maxStr := fmt.Sprintf(" Max Load: %6.3f ", maxLoad)
 			dashes := treeView.InnerWidth() - len([]rune(title)) - len([]rune(maxStr))
@@ -250,7 +251,7 @@ func selectConnection(conf *Configuration, input string) *Connection {
 				}
 			} else if ev.Key == ui.KeyEnter {
 				n := connectionsIndex[treeView.CurrentSelection]
-				if c, ok := n.(*Connection); ok {
+				if c, ok := n.(*types.Connection); ok {
 					if buttons[selectedButton] == connectButton {
 						return c
 					} else if buttons[selectedButton] == loadButton {
@@ -264,7 +265,7 @@ func selectConnection(conf *Configuration, input string) *Connection {
 							exits[path] = nil
 						}(c.Path())
 					}
-				} else if c, ok := n.(*Container); ok {
+				} else if c, ok := n.(*types.Container); ok {
 					if c.Expanded {
 						c.Expanded = false
 					} else {
@@ -303,10 +304,10 @@ func selectConnection(conf *Configuration, input string) *Connection {
 				treeView.Debug = ""
 			} else {
 				n := connectionsIndex[treeView.CurrentSelection]
-				if c, ok := n.(*Connection); ok {
+				if c, ok := n.(*types.Connection); ok {
 					debugView.Text = fmt.Sprintf("%s %s:%d\n%s",
 						c.Info.Protocol, c.Info.Host, c.Info.Port, c.Info.Description)
-				} else if _, ok := n.(*Container); ok {
+				} else if _, ok := n.(*types.Container); ok {
 					debugView.Text = ""
 				}
 			}
@@ -314,7 +315,7 @@ func selectConnection(conf *Configuration, input string) *Connection {
 	}
 }
 
-func filterTree(conf *Configuration, distances map[string]int) *Container {
+func filterTree(conf *types.Configuration, distances map[string]int) *types.Container {
 	if distances == nil {
 		return &conf.Root
 	}
@@ -327,8 +328,8 @@ func filterTree(conf *Configuration, distances map[string]int) *Container {
 	return &filteredRoot
 }
 
-func filterTreeDescend(pathPrefix string, node *Container, distances map[string]int) {
-	newContainers := []Container{}
+func filterTreeDescend(pathPrefix string, node *types.Container, distances map[string]int) {
+	newContainers := []types.Container{}
 	for _, c := range node.Containers { // this implicitly copies the struct
 		nextPathPrefix := pathPrefix + c.Name + "/"
 		if pathPrefixInDistances(nextPathPrefix, distances) {
@@ -338,7 +339,7 @@ func filterTreeDescend(pathPrefix string, node *Container, distances map[string]
 			filterTreeDescend(nextPathPrefix, nc, distances)
 		}
 	}
-	newConnections := []Connection{}
+	newConnections := []types.Connection{}
 	for _, c := range node.Connections {
 		if pathPrefixInDistances(pathPrefix+c.Name, distances) {
 			newConnections = append(newConnections, c)
@@ -358,8 +359,8 @@ func pathPrefixInDistances(nextPathPrefix string, distances map[string]int) bool
 	return false
 }
 
-func drawTree(treeView *SelectList, connectionsIndex map[int]Node,
-	distances map[string]int, pathToIndexMap map[string]int, node *Container) {
+func drawTree(treeView *SelectList, connectionsIndex map[int]types.Node,
+	distances map[string]int, pathToIndexMap map[string]int, node *types.Container) {
 	items := make([]string, 0, len(treeView.Items))
 	treePrint(&items, connectionsIndex, pathToIndexMap, node, treeView.InnerWidth())
 
@@ -370,7 +371,7 @@ func drawTree(treeView *SelectList, connectionsIndex map[int]Node,
 	}
 }
 
-func filter(conf *Configuration, input string) (map[string]int, string) {
+func filter(conf *types.Configuration, input string) (map[string]int, string) {
 
 	input = strings.TrimSpace(input)
 	if input == "" {

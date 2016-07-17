@@ -24,6 +24,7 @@ import (
 	"github.com/cfstras/pcm/Godeps/_workspace/src/github.com/renstrom/fuzzysearch/fuzzy"
 	"github.com/cfstras/pcm/Godeps/_workspace/src/golang.org/x/crypto/ssh/terminal"
 	"github.com/cfstras/pcm/Godeps/_workspace/src/golang.org/x/net/html/charset"
+	"github.com/cfstras/pcm/types"
 )
 
 /*
@@ -50,82 +51,6 @@ void setsize(int fd, int rows, int cols) {
 
 */
 import "C"
-
-type Configuration struct {
-	XMLName xml.Name  `xml:"configuration"`
-	Root    Container `xml:"root"`
-
-	AllConnections map[string]*Connection
-}
-
-type _node struct {
-	Name string `xml:"name,attr"`
-	Type string `xml:"type,attr"`
-
-	path       string `xml:""`
-	treeView   string `xml:""`
-	statusInfo string `xml:""`
-}
-
-type Node interface {
-	Path() string
-}
-
-type Container struct {
-	_node
-
-	Expanded    bool         `xml:"expanded,attr"`
-	Containers  []Container  `xml:"container"`
-	Connections []Connection `xml:"connection"`
-}
-
-type Connection struct {
-	_node
-
-	Expanded bool    `xml:""`
-	Info     Info    `xml:"connection_info"`
-	Login    Login   `xml:"login"`
-	Timeout  Timeout `xml:"timeout"`
-	Commands Command `xml:"command"`
-	Options  Options `xml:"options"`
-}
-
-func (n *_node) Path() string {
-	return n.path
-}
-
-type Info struct {
-	Name        string `xml:"name"`
-	Protocol    string `xml:"protocol"`
-	Host        string `xml:"host"`
-	Port        uint16 `xml:"port"`
-	Session     string `xml:"session"`
-	Commandline string `xml:"commandline"`
-	Description string `xml:"description"`
-}
-
-type Login struct {
-	User     string `xml:"login"`
-	Password string `xml:"password"`
-}
-
-// Timeouts are in milliseconds
-type Timeout struct {
-	ConnectionTimeout int `xml:"connectiontimeout"`
-	LoginTimeout      int `xml:"logintimeout"`
-	PasswordTimeout   int `xml:"passwordtimeout"`
-	CommandTimeout    int `xml:"commandtimeout"`
-}
-
-type Command struct {
-	Commands []string `xml:",any"`
-}
-
-type Options struct {
-	LoginMacros  bool `xml:"loginmacros"`
-	PostCommands bool `xml:"postCommands"`
-	EndlineChar  int  `xml:"endlinechar"`
-}
 
 var (
 	connectionsPath string = "~/Downloads/connections.xml"
@@ -156,9 +81,11 @@ func main() {
 	pathP := flag.String("connectionsPath", connectionsPath, "Path to PuTTY connections.xml")
 	verbose := false
 	useFuzzySimple := false
+	useOwnSSH := false
 	flag.BoolVar(&verbose, "verbose", false, "Display more info, such as hostnames and passwords")
 	flag.BoolVar(&verbose, "v", false, "Display more info, such as hostnames and passwords")
 	flag.BoolVar(&useFuzzySimple, "simple", false, "Use simple interface")
+	flag.BoolVar(&useOwnSSH, "ssh", false, "Use golang ssh client instead of os-client")
 
 	flag.Parse()
 	if pathP != nil {
@@ -177,7 +104,7 @@ func main() {
 
 	conf := loadConns()
 
-	var conn *Connection
+	var conn *types.Connection
 	if useFuzzySimple {
 		conn = fuzzySimple(&conf, searchFor)
 	} else {
@@ -210,10 +137,14 @@ func main() {
 	oldState, err := terminal.MakeRaw(0)
 	p(err, "making terminal raw")
 	defer terminal.Restore(0, oldState)
-	connect(conn, console, os.Stdin, exit, signals, func() *string { return nil })
+	if useOwnSSH {
+		connect(conn, console, os.Stdin, exit, signals, func() *string { return nil })
+	} else {
+		connect(conn, console, os.Stdin, exit, signals, func() *string { return nil })
+	}
 }
 
-func fuzzySimple(conf *Configuration, searchFor string) *Connection {
+func fuzzySimple(conf *types.Configuration, searchFor string) *types.Connection {
 	words := listWords(conf.AllConnections)
 
 	reader := bufio.NewReader(os.Stdin)
@@ -256,7 +187,7 @@ func fuzzySimple(conf *Configuration, searchFor string) *Connection {
 	return conn
 }
 
-func connect(c *Connection, console io.Writer, inputConsole io.Reader,
+func connect(c *types.Connection, console io.Writer, inputConsole io.Reader,
 	exit <-chan bool, signals chan os.Signal, moreCommands func() *string) {
 
 	cmd := &exec.Cmd{}
@@ -430,7 +361,7 @@ func DummyReader(label string, input io.Reader) (io.Reader, error) {
 	return input, nil
 }
 
-func loadConns() (result Configuration) {
+func loadConns() (result types.Configuration) {
 	filename := connectionsPath
 	if strings.Contains(filename, "~") {
 		homeDir := os.Getenv("HOME")
@@ -456,7 +387,7 @@ func loadConns() (result Configuration) {
 	return
 }
 
-func deleteEmptyCommands(conf *Configuration) {
+func deleteEmptyCommands(conf *types.Configuration) {
 	for _, conn := range conf.AllConnections {
 		n := []string{}
 		for _, v := range conn.Commands.Commands {
@@ -473,134 +404,4 @@ func p(err error, where string) {
 		color.Yellow("When " + where + ": ")
 		panic(err)
 	}
-}
-
-func treePrint(target *[]string, index map[int]Node, pathToIndexMap map[string]int,
-	node *Container, width int) {
-	if node == nil {
-		return
-	}
-	treeDescend(target, index, pathToIndexMap, "", "/", node, width)
-	return
-}
-
-func treeDescend(target *[]string, index map[int]Node, pathToIndexMap map[string]int,
-	prefix string, pathPrefix string, node *Container, width int) {
-
-	if !node.Expanded {
-		return
-	}
-	for i := range node.Containers {
-		nextCont := &node.Containers[i]
-		nextPathPrefix := pathPrefix + nextCont.Name + "/"
-
-		var nodeSym string
-		var newPrefix string
-		var expand string
-		if i == len(node.Containers)-1 {
-			if len(node.Connections) > 0 {
-				nodeSym = "┡"
-				newPrefix = "│ "
-			} else {
-				nodeSym = "┗"
-				newPrefix = "  "
-			}
-		} else {
-			if len(node.Containers) > 0 {
-				nodeSym = "┣"
-				newPrefix = "┃ "
-			} else if len(node.Containers) == 0 {
-				nodeSym = "┗"
-				newPrefix = "  "
-			} else {
-				nodeSym = "┣"
-				newPrefix = "┃ "
-			}
-		}
-		if nextCont.Expanded {
-			if len(nextCont.Containers) > 0 {
-				expand = "━┓ ▼ "
-			} else {
-				expand = "━┑ ▼ "
-			}
-		} else {
-			expand = "━┅ ▶ "
-		}
-		index[len(*target)] = nextCont
-		if pathToIndexMap != nil {
-			pathToIndexMap[nextCont.Path()] = len(*target)
-		}
-		str := prefix + nodeSym + expand + nextCont.Name
-		nextCont.treeView = str
-
-		spaces := width - len([]rune(str)) - len([]rune(nextCont.statusInfo))
-		if spaces > 0 {
-			str += strings.Repeat(" ", spaces)
-		}
-		str += nextCont.statusInfo
-
-		*target = append(*target, str)
-		treeDescend(target, index, pathToIndexMap, prefix+newPrefix,
-			nextPathPrefix, nextCont, width)
-	}
-	for i := range node.Connections {
-		conn := &node.Connections[i]
-		var nodeSym string
-		if i == len(node.Connections)-1 {
-			nodeSym = "└"
-		} else if len(node.Connections) != 0 {
-			nodeSym = "├"
-		} else {
-			nodeSym = "┌"
-		}
-		index[len(*target)] = conn
-		if pathToIndexMap != nil {
-			pathToIndexMap[conn.Path()] = len(*target)
-		}
-		str := prefix + nodeSym + "─ " + conn.Name
-		conn.treeView = str
-
-		spaces := width - len([]rune(str)) - len([]rune(conn.statusInfo))
-		if spaces > 0 {
-			str += strings.Repeat(" ", spaces)
-		}
-		str += conn.statusInfo
-
-		*target = append(*target, str)
-	}
-}
-
-func listConnections(config *Configuration,
-	includeDescription bool) map[string]*Connection {
-
-	conns := make(map[string]*Connection)
-	descendConnections("", &config.Root, conns, includeDescription)
-	return conns
-}
-
-func descendConnections(prefix string, node *Container,
-	conns map[string]*Connection, includeDescription bool) {
-	node.path = prefix
-	for i := range node.Connections {
-		c := &node.Connections[i]
-		key := prefix + "/" + c.Name
-		if includeDescription {
-			key += "  " + c.Info.Description
-		}
-		conns[key] = c
-		c.path = key
-	}
-	for i := range node.Containers {
-		n := &node.Containers[i]
-		descendConnections(prefix+"/"+n.Name, n, conns,
-			includeDescription)
-	}
-}
-
-func listWords(conns map[string]*Connection) []string {
-	words := make([]string, 0, len(conns))
-	for k := range conns {
-		words = append(words, k)
-	}
-	return words
 }
