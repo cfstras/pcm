@@ -76,5 +76,5 @@ type Options struct {
 	LoginMacros  bool   `xml:"loginmacros"`
 	PostCommands bool   `xml:"postCommands"`
 	EndlineChar  int    `xml:"endlinechar"`
-	SSHPublicKey []byte `xml:"ssh_public_key"`
+	SSHPublicKey string `xml:"ssh_public_key"`
 }

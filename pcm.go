@@ -67,7 +67,7 @@ func (l StringList) Len() int           { return len(l) }
 func (l StringList) Swap(i, j int)      { l[i], l[j] = l[j], l[i] }
 func (l StringList) Less(i, j int) bool { return strings.Compare(l[i], l[j]) < 0 }
 
-const DEBUG = true
+const DEBUG = false
 
 func main() {
 	defer func() {
@@ -90,7 +90,7 @@ func main() {
 	flag.BoolVar(&verbose, "verbose", false, "Display more info, such as hostnames and passwords")
 	flag.BoolVar(&verbose, "v", false, "Display more info, such as hostnames and passwords")
 	flag.BoolVar(&useFuzzySimple, "simple", false, "Use simple interface")
-	flag.BoolVar(&useOwnSSH, "ssh", false, "Use golang ssh client instead of os-client")
+	flag.BoolVar(&useOwnSSH, "ssh", true, "Use golang ssh client instead of os-client")
 
 	flag.Parse()
 	if pathP != nil {

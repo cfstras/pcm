@@ -1,7 +1,6 @@
 package ssh
 
 import (
-	"bufio"
 	"bytes"
 	"crypto/md5"
 	"crypto/subtle"
@@ -40,15 +39,22 @@ var signalMap map[os.Signal]ssh.Signal = map[os.Signal]ssh.Signal{
 	syscall.SIGWINCH: "", // ignore
 }
 
-type instance struct {
-	terminal types.Terminal
-	conn     *types.Connection
+type answerHandler func(answer string)
 
+type instance struct {
+	terminal  types.Terminal
+	conn      *types.Connection
+	questions chan answerHandler
+
+	session *ssh.Session
 	changed bool
 }
 
 func Connect(conn *types.Connection, terminal types.Terminal, moreCommands func() *string) bool {
-	inst := &instance{terminal: terminal, conn: conn}
+	inst := &instance{
+		terminal: terminal, conn: conn,
+		questions: make(chan answerHandler, 1),
+	}
 	return inst.connect(moreCommands)
 }
 
@@ -69,12 +75,12 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 
 	// Each ClientConn can support multiple interactive sessions,
 	// represented by a Session.
-	session, err := client.NewSession()
+	inst.session, err = client.NewSession()
 	if err != nil {
 		color.Redln("Failed to create session:", err)
 		return inst.changed
 	}
-	defer session.Close()
+	defer inst.session.Close()
 
 	// Set up terminal modes
 	modes := ssh.TerminalModes{
@@ -100,7 +106,7 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 			}
 			n, err := stdErrOut.Read(buf)
 			if err != nil {
-				if err != io.EOF {
+				if err == io.EOF {
 					exit <- true
 					return
 				}
@@ -111,7 +117,7 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 
 			_, err = inst.terminal.Stdout().Write(buf[:n])
 			if err != nil {
-				if err != io.EOF {
+				if err == io.EOF {
 					exit <- true
 					return
 				}
@@ -142,6 +148,7 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 			for {
 				buf := buffers.Get().([]byte)
 				n, err := inst.terminal.Stdin().Read(buf)
+				buf = buf[:n]
 				//fmt.Fprintln(inst.terminal.Stdout(), "my stdin got", n, string(buf[:n]))
 
 				if err != nil && err != io.EOF {
@@ -159,10 +166,30 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 				}
 				// ctrl+c, ctrl+d, ctrl+z
 				for _, c := range []byte{0x04, 0x03, 0x1a} {
-					if bytes.Contains(buf[:n], []byte{c}) {
+					if bytes.Contains(buf, []byte{c}) {
 						writeRightNow = append(writeRightNow, c)
 					}
 				}
+
+				if newLinePos := bytes.Index(buf, []byte{'\n'}); newLinePos != -1 {
+					// see if we have any answer handlers
+					select {
+					case handler := <-inst.questions:
+						answer := string(buf[:newLinePos])
+						handler(answer)
+						// munch the string
+						buf = buf[newLinePos+1:]
+						if len(buf) == 0 {
+							if cap(buf) > 256 {
+								buffers.Put(buf)
+							}
+							continue
+						}
+					default:
+						// do nothing
+					}
+				}
+
 				if len(writeRightNow) > 0 {
 					_, err = sshStdin.Write(writeRightNow)
 					if err != nil {
@@ -172,7 +199,7 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 						return
 					}
 				} else {
-					inputBufChan <- buf[:n]
+					inputBufChan <- buf
 				}
 			}
 		}()
@@ -212,32 +239,34 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 	}
 
 	nextCommand := func() *string {
-		if len(commands) > 1 {
-			v := <-commands
+		select {
+		case v := <-commands:
 			return &v
-		} else if c := moreCommands(); c != nil {
-			return c
-		} else {
-			startWait.Broadcast()
-			return nil
+		default:
+			if c := moreCommands(); c != nil {
+				return c
+			} else {
+				startWait.Broadcast()
+				return nil
+			}
 		}
 	}
 
-	sshStdin, err := session.StdinPipe()
+	sshStdin, err := inst.session.StdinPipe()
 	if err != nil {
 		color.Redln("Error opening stdin pipe", err)
 		return inst.changed
 	}
 	go inFunc(sshStdin, startWait)
 
-	sshStdout, err := session.StdoutPipe()
+	sshStdout, err := inst.session.StdoutPipe()
 	if err != nil {
 		color.Redln("Error opening stdout pipe", err)
 		return inst.changed
 	}
 	go shellOutFunc(sshStdout, sshStdin, "stdout", nextCommand, startWait)
 
-	sshStderr, err := session.StderrPipe()
+	sshStderr, err := inst.session.StderrPipe()
 	if err != nil {
 		color.Redln("Error opening stderr pipe", err)
 		return inst.changed
@@ -245,33 +274,27 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 	go shellOutFunc(sshStderr, sshStdin, "stderr", nextCommand, startWait)
 
 	// Request pseudo terminal
-	if err := session.RequestPty("xterm", 80, 40, modes); err != nil {
+	if err := inst.session.RequestPty("xterm", 80, 40, modes); err != nil {
 		color.Redln("request for pseudo terminal failed:", err)
 		return inst.changed
 	}
 	// Start remote shell
-	if err := session.Shell(); err != nil {
+	if err := inst.session.Shell(); err != nil {
 		color.Redln("failed to start shell:", err)
 		return inst.changed
 	}
+	inst.SendWindowSize()
+
 	signalWatcher := func() {
 		for s := range inst.terminal.Signals() {
 			sshSignal, ok := signalMap[s]
 			if !ok {
 				color.Yellowln("Unknown signal", s)
 			} else if sshSignal != "" {
-				session.Signal(sshSignal)
+				inst.session.Signal(sshSignal)
 			}
 			if s == syscall.SIGWINCH {
-				if w, h, err := inst.terminal.GetSize(); err != nil {
-					color.Redln("Error getting term size:", err)
-				} else {
-					msg := ssh.Marshal(&winchMsg{uint32(w), uint32(h), 0, 0})
-					_, err = session.SendRequest("window-change", false, msg)
-					if err != nil {
-						color.Redln("Error sending winch:", err)
-					}
-				}
+				inst.SendWindowSize()
 			} else if s == syscall.SIGTERM {
 				exit <- true
 			}
@@ -291,9 +314,25 @@ type winchMsg struct {
 	ypix   uint32
 }
 
+func (inst *instance) SendWindowSize() {
+	if w, h, err := inst.terminal.GetSize(); err != nil {
+		color.Redln("Error getting term size:", err)
+	} else {
+		msg := ssh.Marshal(&winchMsg{uint32(w), uint32(h), 0, 0})
+		_, err = inst.session.SendRequest("window-change", false, msg)
+		if err != nil {
+			color.Redln("Error sending winch:", err)
+		}
+	}
+}
+
 func (inst *instance) hostKeyCallback(hostname string, remote net.Addr, key ssh.PublicKey) error {
-	oldPublicKey := inst.conn.Options.SSHPublicKey
+	oldPublicKey, err := hex.DecodeString(inst.conn.Options.SSHPublicKey)
+	if err != nil {
+		return errors.New("XML is corrupt: " + err.Error())
+	}
 	newPublicKey := key.Marshal()
+	//TODO correctly marshal/unmarshal into xml
 
 	newPublicMD5 := md5.Sum(newPublicKey)
 	newPublicString := hex.EncodeToString(newPublicMD5[:])
@@ -301,7 +340,7 @@ func (inst *instance) hostKeyCallback(hostname string, remote net.Addr, key ssh.
 	if len(oldPublicKey) == 0 {
 		color.Yellowln("Registering new SSH Public Key", key.Type(),
 			newPublicString)
-		inst.conn.Options.SSHPublicKey = newPublicKey
+		inst.conn.Options.SSHPublicKey = hex.EncodeToString(newPublicKey)
 		inst.changed = true
 		return nil
 	}
@@ -313,21 +352,25 @@ func (inst *instance) hostKeyCallback(hostname string, remote net.Addr, key ssh.
 	if same == 1 {
 		return nil
 	}
-	color.Redln("-----POSSIBLE ATTACK-----\nSSH key changed! expected:",
+	color.Redln("-----POSSIBLE ATTACK-----\nSSH key changed! expected (md5):",
 		oldPublicString,
-		"got:", newPublicString, "type", key.Type())
+		"got:", newPublicString, "type:", key.Type())
 	inst.terminal.Stderr().Write([]byte("Accept change [Ny]? "))
-	scan := bufio.NewScanner(inst.terminal.Stdin())
-	ok := scan.Scan()
-	if !ok {
-		return errors.New("Public key not accepted, got EOF on input")
+
+	buf := make([]byte, 128)
+	n, err := inst.terminal.Stdin().Read(buf)
+	if err != nil {
+		color.Yellowln("Error reading answer:", err)
+		return err
 	}
-	text := strings.ToLower(scan.Text())
+	inst.terminal.Stderr().Write([]byte{'\n'})
+
+	text := strings.ToLower(string(buf[:n]))
 	if text == "y" || text == "yes" {
-		inst.conn.Options.SSHPublicKey = newPublicKey
+		inst.conn.Options.SSHPublicKey = hex.EncodeToString(newPublicKey)
 		inst.changed = true
 		color.Yellowln("Saving new public key to connections.xml on exit.")
 		return nil
 	}
-	return errors.New("Public key not accepted, got EOF on input")
+	return errors.New("Public key not accepted")
 }
