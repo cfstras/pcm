@@ -18,7 +18,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/cfstras/pcm/Godeps/_workspace/src/github.com/cfstras/go-utils/color"
+	"github.com/cfstras/go-utils/color"
 	"github.com/cfstras/pcm/types"
 )
 

@@ -21,13 +21,13 @@ import (
 
 	"golang.org/x/text/encoding/unicode"
 
-	"github.com/cfstras/pcm/Godeps/_workspace/src/github.com/cfstras/go-utils/color"
-	"github.com/cfstras/pcm/Godeps/_workspace/src/github.com/kr/pty"
-	"github.com/cfstras/pcm/Godeps/_workspace/src/github.com/renstrom/fuzzysearch/fuzzy"
-	"github.com/cfstras/pcm/Godeps/_workspace/src/golang.org/x/crypto/ssh/terminal"
-	"github.com/cfstras/pcm/Godeps/_workspace/src/golang.org/x/net/html/charset"
+	"github.com/cfstras/go-utils/color"
 	"github.com/cfstras/pcm/ssh"
 	"github.com/cfstras/pcm/types"
+	"github.com/kr/pty"
+	"github.com/renstrom/fuzzysearch/fuzzy"
+	"golang.org/x/crypto/ssh/terminal"
+	"golang.org/x/net/html/charset"
 )
 
 /*

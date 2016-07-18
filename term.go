@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/cfstras/pcm/Godeps/_workspace/src/github.com/cfstras/go-utils/math"
+	"github.com/cfstras/go-utils/math"
 	"github.com/cfstras/pcm/types"
 
-	ui "github.com/cfstras/pcm/Godeps/_workspace/src/github.com/gizak/termui"
-	"github.com/cfstras/pcm/Godeps/_workspace/src/github.com/renstrom/fuzzysearch/fuzzy"
+	ui "github.com/gizak/termui"
+	"github.com/renstrom/fuzzysearch/fuzzy"
 )
 
 func selectConnection(conf *types.Configuration, input string) *types.Connection {
