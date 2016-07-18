@@ -19,11 +19,14 @@ import (
 	"sync/atomic"
 	"syscall"
 
+	"golang.org/x/text/encoding/unicode"
+
 	"github.com/cfstras/pcm/Godeps/_workspace/src/github.com/cfstras/go-utils/color"
 	"github.com/cfstras/pcm/Godeps/_workspace/src/github.com/kr/pty"
 	"github.com/cfstras/pcm/Godeps/_workspace/src/github.com/renstrom/fuzzysearch/fuzzy"
 	"github.com/cfstras/pcm/Godeps/_workspace/src/golang.org/x/crypto/ssh/terminal"
 	"github.com/cfstras/pcm/Godeps/_workspace/src/golang.org/x/net/html/charset"
+	"github.com/cfstras/pcm/ssh"
 	"github.com/cfstras/pcm/types"
 )
 
@@ -38,6 +41,8 @@ void getsize(int* rows, int* cols) {
 	*cols = w.ws_col;
 	//printf ("lines %d\n", w.ws_row);
 	//printf ("columns %d\n", w.ws_col);
+	//printf ("pixels x %d\n", w.ws_xpixel);
+	//printf ("pixels y %d\n", w.ws_ypixel);
 }
 void setsize(int fd, int rows, int cols) {
 	struct winsize w;
@@ -62,7 +67,7 @@ func (l StringList) Len() int           { return len(l) }
 func (l StringList) Swap(i, j int)      { l[i], l[j] = l[j], l[i] }
 func (l StringList) Less(i, j int) bool { return strings.Compare(l[i], l[j]) < 0 }
 
-const DEBUG = false
+const DEBUG = true
 
 func main() {
 	defer func() {
@@ -130,18 +135,49 @@ func main() {
 	//fmt.Println(conn.Login)
 	//fmt.Println(conn.Command)
 
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, os.Interrupt, syscall.SIGWINCH)
-	exit := make(chan bool)
-	console := os.Stdout
+	console := &consoleTerminal{
+		exit: make(chan bool),
+	}
 	oldState, err := terminal.MakeRaw(0)
 	p(err, "making terminal raw")
 	defer terminal.Restore(0, oldState)
+	var changed bool
 	if useOwnSSH {
-		connect(conn, console, os.Stdin, exit, signals, func() *string { return nil })
+		changed = ssh.Connect(conn, console, func() *string { return nil })
 	} else {
-		connect(conn, console, os.Stdin, exit, signals, func() *string { return nil })
+		changed = connect(conn, console, func() *string { return nil })
 	}
+	if changed {
+		saveConns(&conf)
+	}
+}
+
+type consoleTerminal struct {
+	exit    chan bool
+	signals chan os.Signal
+}
+
+func (c *consoleTerminal) GetSize() (width, height int, err error) {
+	return terminal.GetSize(int(os.Stdout.Fd()))
+}
+func (c *consoleTerminal) Stdin() io.Reader {
+	return os.Stdin
+}
+func (c *consoleTerminal) Stdout() io.Writer {
+	return os.Stdout
+}
+func (c *consoleTerminal) Stderr() io.Writer {
+	return os.Stderr
+}
+func (c *consoleTerminal) ExitRequests() <-chan bool {
+	return c.exit
+}
+func (c *consoleTerminal) Signals() <-chan os.Signal {
+	if c.signals == nil {
+		c.signals = make(chan os.Signal, 1)
+		signal.Notify(c.signals, os.Interrupt, syscall.SIGWINCH)
+	}
+	return c.signals
 }
 
 func fuzzySimple(conf *types.Configuration, searchFor string) *types.Connection {
@@ -187,8 +223,7 @@ func fuzzySimple(conf *types.Configuration, searchFor string) *types.Connection 
 	return conn
 }
 
-func connect(c *types.Connection, console io.Writer, inputConsole io.Reader,
-	exit <-chan bool, signals chan os.Signal, moreCommands func() *string) {
+func connect(c *types.Connection, terminal types.Terminal, moreCommands func() *string) bool {
 
 	cmd := &exec.Cmd{}
 	cmd.Path = "/usr/bin/ssh"
@@ -204,7 +239,7 @@ func connect(c *types.Connection, console io.Writer, inputConsole io.Reader,
 			}
 			n, err := pipe.Read(buf)
 			str := string(buf[:n])
-			fmt.Fprint(console, str)
+			fmt.Fprint(terminal.Stdout(), str)
 			if strings.HasSuffix(str, "assword: ") || strings.HasSuffix(str, "$ ") ||
 				strings.HasSuffix(str, "# ") {
 				if answer := nextCommand(); answer != nil {
@@ -219,7 +254,7 @@ func connect(c *types.Connection, console io.Writer, inputConsole io.Reader,
 				if err != io.EOF {
 					return
 				}
-				fmt.Fprintln(console, "pipe", name, "error", err)
+				fmt.Fprintln(terminal.Stderr(), "pipe", name, "error", err)
 				return
 			}
 		}
@@ -236,10 +271,9 @@ func connect(c *types.Connection, console io.Writer, inputConsole io.Reader,
 			for {
 				buf := buffers.Get().([]byte)
 				n, err := inputConsole.Read(buf)
-				//fmt.Fprintln(console, "my stdin got", n, string(buf[:n]))
 
 				if err != nil && err != io.EOF {
-					fmt.Fprintln(console, "my stdin got error", err)
+					fmt.Fprintln(terminal.Stderr(), "my stdin got error", err)
 					input <- nil
 					startWait.Broadcast()
 					return
@@ -259,7 +293,7 @@ func connect(c *types.Connection, console io.Writer, inputConsole io.Reader,
 				if write != nil {
 					_, err = pipe.Write(write)
 					if err != nil {
-						fmt.Fprintln(console, "stdin got error", err)
+						fmt.Fprintln(terminal.Stderr(), "stdin got error", err)
 						input <- nil
 						startWait.Broadcast()
 						return
@@ -275,14 +309,14 @@ func connect(c *types.Connection, console io.Writer, inputConsole io.Reader,
 		startWait.L.Unlock()
 		for buf := range input {
 			if buf == nil {
-				fmt.Fprintln(console, "closing stdIn:", pipe.Close())
+				fmt.Fprintln(terminal.Stderr(), "closing stdIn:", pipe.Close())
 				return
 			}
 			_, err := pipe.Write(buf)
 
 			if err != nil {
-				fmt.Fprintln(console, "stdin got error", err)
-				fmt.Fprintln(console, "closing stdIn:", pipe.Close())
+				fmt.Fprintln(terminal.Stderr(), "stdin got error", err)
+				fmt.Fprintln(terminal.Stderr(), "closing stdIn:", pipe.Close())
 				return
 			}
 			if cap(buf) > 256 {
@@ -320,7 +354,7 @@ func connect(c *types.Connection, console io.Writer, inputConsole io.Reader,
 	}
 
 	signalWatcher := func(out *os.File, cmd *exec.Cmd) {
-		for s := range signals {
+		for s := range terminal.Signals() {
 			if s == syscall.SIGWINCH {
 				sendSize(out, cmd)
 			} else if s == os.Interrupt {
@@ -335,7 +369,7 @@ func connect(c *types.Connection, console io.Writer, inputConsole io.Reader,
 	p(err, "starting ssh")
 
 	go outFunc(pty, "pty", nextCommand, startWait)
-	go inFunc(pty, inputConsole, startWait)
+	go inFunc(pty, terminal.Stdin(), startWait)
 	go signalWatcher(pty, cmd)
 	sendSize(pty, cmd)
 
@@ -348,28 +382,33 @@ func connect(c *types.Connection, console io.Writer, inputConsole io.Reader,
 			p(err, "Killing ssh process")
 			return
 		}
-	}(exit)
+	}(terminal.ExitRequests())
 
 	err = cmd.Wait()
 	atomic.StoreInt32(&procExit, 1)
 	if err != nil {
-		fmt.Fprintln(console, "SSH Process ended:", err)
+		fmt.Fprintln(terminal.Stderr(), "SSH Process ended:", err)
 	}
+	return false
 }
 
 func DummyReader(label string, input io.Reader) (io.Reader, error) {
 	return input, nil
 }
 
-func loadConns() (result types.Configuration) {
-	filename := connectionsPath
-	if strings.Contains(filename, "~") {
+func replaceHome(in string) string {
+	if strings.Contains(in, "~") {
 		homeDir := os.Getenv("HOME")
 		if homeDir == "" {
 			panic("Error: $HOME not set")
 		}
-		filename = strings.Replace(filename, "~", homeDir+"/", -1)
+		in = strings.Replace(in, "~", homeDir+"/", -1)
 	}
+	return in
+}
+
+func loadConns() (result types.Configuration) {
+	filename := replaceHome(connectionsPath)
 	rd, err := os.Open(filename)
 	p(err, "opening "+filename)
 	defer rd.Close()
@@ -385,6 +424,22 @@ func loadConns() (result types.Configuration) {
 
 	result.Root.Expanded = true
 	return
+}
+
+func saveConns(conf *types.Configuration) {
+	filename := replaceHome(connectionsPath)
+	tmp := filename + ".tmp"
+	wr, err := os.Create(tmp)
+	p(err, "opening "+filename)
+	defer wr.Close()
+	defer p(os.Rename(tmp, filename), "overwriting connections.xml")
+
+	encoding := unicode.UTF16(unicode.LittleEndian, unicode.ExpectBOM)
+	textEncoder := encoding.NewEncoder()
+
+	encoder := xml.NewEncoder(textEncoder.Writer(wr))
+	encoder.Indent("", "  ")
+	p(encoder.Encode(&conf), "encoding xml")
 }
 
 func deleteEmptyCommands(conf *types.Configuration) {

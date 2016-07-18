@@ -6,16 +6,16 @@ type Configuration struct {
 	XMLName xml.Name  `xml:"configuration"`
 	Root    Container `xml:"root"`
 
-	AllConnections map[string]*Connection
+	AllConnections map[string]*Connection `xml:"-"`
 }
 
 type _node struct {
 	Name string `xml:"name,attr"`
 	Type string `xml:"type,attr"`
 
-	Path_      string `xml:""`
-	TreeView   string `xml:""`
-	StatusInfo string `xml:""`
+	Path_      string `xml:"-"`
+	TreeView   string `xml:"-"`
+	StatusInfo string `xml:"-"`
 }
 
 type Node interface {
@@ -33,7 +33,7 @@ type Container struct {
 type Connection struct {
 	_node
 
-	Expanded bool    `xml:""`
+	Expanded bool    `xml:"-"`
 	Info     Info    `xml:"connection_info"`
 	Login    Login   `xml:"login"`
 	Timeout  Timeout `xml:"timeout"`
@@ -73,7 +73,8 @@ type Command struct {
 }
 
 type Options struct {
-	LoginMacros  bool `xml:"loginmacros"`
-	PostCommands bool `xml:"postCommands"`
-	EndlineChar  int  `xml:"endlinechar"`
+	LoginMacros  bool   `xml:"loginmacros"`
+	PostCommands bool   `xml:"postCommands"`
+	EndlineChar  int    `xml:"endlinechar"`
+	SSHPublicKey []byte `xml:"ssh_public_key"`
 }

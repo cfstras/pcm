@@ -2,11 +2,7 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"regexp"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/cfstras/pcm/Godeps/_workspace/src/github.com/cfstras/go-utils/math"
 	"github.com/cfstras/pcm/types"
@@ -35,15 +31,12 @@ func selectConnection(conf *types.Configuration, input string) *types.Connection
 
 	connectButton := ui.NewPar(" Connect ")
 
-	loadButton := ui.NewPar(" Show Load ")
-
 	menuView := ui.NewRow(
 		ui.NewCol(8, 0, connectButton),
-		ui.NewCol(4, 0, loadButton),
 	)
 
 	selectedButton := 0
-	buttons := []*ui.Par{connectButton, loadButton}
+	buttons := []*ui.Par{connectButton}
 
 	selectButtons := func() {
 		selectedButton %= len(buttons)
@@ -69,7 +62,6 @@ func selectConnection(conf *types.Configuration, input string) *types.Connection
 	heights := func() {
 		searchView.Height = 3
 		connectButton.Height = searchView.Height
-		loadButton.Height = searchView.Height
 		menuView.Height = searchView.Height
 		debugView.Height = 5
 		treeView.Height = ui.TermHeight() - searchView.Height - debugView.Height
@@ -97,110 +89,6 @@ func selectConnection(conf *types.Configuration, input string) *types.Connection
 	doRefilter()
 
 	events := make(chan ui.Event)
-
-	var maxLoad float32 = 0.01
-	allLoads := make(map[string][]float32)
-	exits := make(map[string]chan<- bool)
-	showLoad := func(conn *types.Connection) {
-		path := conn.Path()
-		if _, ok := allLoads[path]; ok {
-			return
-		}
-		loads := make([]float32, 128)
-		allLoads[path] = loads
-
-		loadChan := make(chan float32, 1)
-		waiting := true
-		go func() {
-			out, in := NewBuffer(), NewBuffer()
-			exit := make(chan bool)
-			exits[path] = exit
-
-			signals := make(chan os.Signal, 1)
-			go connect(conn, out, in, exit, signals, func() *string {
-				a := "cat /proc/loadavg"
-				return &a
-			})
-			line := make([]byte, 1024)
-			pos := 0
-			re := regexp.MustCompile(`(\d+\.\d+)\s(\d+\.\d+)\s(\d+\.\d+)`)
-			for exits[path] != nil {
-				l, err := out.Read(line[pos:])
-				str := string(line[:pos])
-				pos += l
-				p(err, "reading from load connection "+conn.Name+": "+str)
-				if res := re.FindStringSubmatch(str); res != nil {
-					pos = 0
-					load, err := strconv.ParseFloat(res[1], 32)
-					if err == nil {
-						waiting = false
-						loadChan <- float32(load)
-					} else {
-						conn.StatusInfo = fmt.Sprintln("error parsing load:", res[1], err)
-						drawTree(treeView, connectionsIndex, distances, pathToIndexMap, filteredRoot)
-						events <- ui.Event{Type: ui.EventNone}
-					}
-					time.Sleep(300 * time.Millisecond)
-				} else if waiting {
-					l := strings.SplitN(string(line), "\n", -1)
-					if len(l) > 1 {
-						waiting = false
-						conn.StatusInfo = strings.TrimSpace(l[len(l)-2])
-						drawTree(treeView, connectionsIndex, distances, pathToIndexMap, filteredRoot)
-						events <- ui.Event{Type: ui.EventNone}
-					}
-				}
-			}
-			close(loadChan)
-		}()
-
-		title := " Connections "
-	forloop:
-		for i := 0; waiting; i++ {
-			select {
-			case l := <-loadChan:
-				loadChan <- l
-				break forloop
-			default:
-				nums := make([]float32, 16)
-				i %= len(nums)
-				for i2 := 0; i2 < len(nums); i2++ {
-					nums[i2] = float32((i2 + i) % len(nums))
-				}
-				line := Sparkline(nums, float32(0), float32(len(nums)))
-				conn.StatusInfo = line
-
-				drawTree(treeView, connectionsIndex, distances, pathToIndexMap, filteredRoot)
-				events <- ui.Event{Type: ui.EventNone}
-				time.Sleep(100 * time.Millisecond)
-			}
-		}
-
-		for newLoad := range loadChan {
-			for i := range loads {
-				if i > 0 {
-					loads[i-1] = loads[i]
-				}
-			}
-			loads[len(loads)-1] = newLoad
-			if newLoad > maxLoad {
-				maxLoad = newLoad
-			}
-			width := treeView.InnerWidth() - len([]rune(conn.TreeView)) - 2
-			width = math.MinI(width, len(loads))
-			width = math.MaxI(width, 0)
-			line := Sparkline(loads[:width], 0, maxLoad)
-			conn.StatusInfo = line
-
-			maxStr := fmt.Sprintf(" Max Load: %6.3f ", maxLoad)
-			dashes := treeView.InnerWidth() - len([]rune(title)) - len([]rune(maxStr))
-			dashes = math.MaxI(dashes, 0)
-			treeView.Border.Label = title + strings.Repeat("─", dashes) + maxStr
-
-			drawTree(treeView, connectionsIndex, distances, pathToIndexMap, filteredRoot)
-			events <- ui.Event{Type: ui.EventNone}
-		}
-	}
 
 	go func(in <-chan ui.Event, out chan<- ui.Event) {
 		for e := range in {
@@ -254,16 +142,6 @@ func selectConnection(conf *types.Configuration, input string) *types.Connection
 				if c, ok := n.(*types.Connection); ok {
 					if buttons[selectedButton] == connectButton {
 						return c
-					} else if buttons[selectedButton] == loadButton {
-						go showLoad(c)
-						defer func(path string) {
-							if exits[path] == nil {
-								return
-							}
-							exits[path] <- true
-							close(exits[path])
-							exits[path] = nil
-						}(c.Path())
 					}
 				} else if c, ok := n.(*types.Container); ok {
 					if c.Expanded {
