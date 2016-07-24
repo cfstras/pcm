@@ -6,12 +6,15 @@ type Configuration struct {
 	XMLName xml.Name  `xml:"configuration"`
 	Root    Container `xml:"root"`
 
+	Version      string `xml:"version,attr"`
+	SavePassword bool   `xml:"savepassword,attr"`
+
 	AllConnections map[string]*Connection `xml:"-"`
 }
 
 type _node struct {
-	Name string `xml:"name,attr"`
 	Type string `xml:"type,attr"`
+	Name string `xml:"name,attr"`
 
 	Path_      string `xml:"-"`
 	TreeView   string `xml:"-"`
@@ -58,6 +61,7 @@ type Info struct {
 type Login struct {
 	User     string `xml:"login"`
 	Password string `xml:"password"`
+	Prompt   string `xml:"prompt"`
 }
 
 // Timeouts are in milliseconds
@@ -69,12 +73,16 @@ type Timeout struct {
 }
 
 type Command struct {
-	Commands []string `xml:",any"`
+	Command1 string `xml:"command1"`
+	Command2 string `xml:"command2"`
+	Command3 string `xml:"command3"`
+	Command4 string `xml:"command4"`
+	Command5 string `xml:"command5"`
 }
 
 type Options struct {
-	LoginMacros  bool   `xml:"loginmacros"`
-	PostCommands bool   `xml:"postCommands"`
+	LoginMacro   bool   `xml:"loginmacro"`
+	PostCommands bool   `xml:"postcommands"`
 	EndlineChar  int    `xml:"endlinechar"`
-	SSHPublicKey string `xml:"ssh_public_key"`
+	SSHPublicKey string `xml:"ssh_public_key,omitempty"`
 }

@@ -96,8 +96,13 @@ func main() {
 		color.Yellow("Password: ")
 		fmt.Println(conn.Login.Password)
 		color.Yellowln("Commands:")
-		for _, v := range conn.Commands.Commands {
-			fmt.Println(v)
+		f := util.GetCommandFunc(conn, nil, func() *string { return nil })
+		for {
+			if v := f(); v == nil {
+				break
+			} else {
+				fmt.Println(v)
+			}
 		}
 	}
 	//fmt.Println(conn.Login)
@@ -106,9 +111,9 @@ func main() {
 	console := &consoleTerminal{
 		exit: make(chan bool),
 	}
-	oldState, err := terminal.MakeRaw(0)
+	oldState, err := util.SetupTerminal()
 	p(err, "making terminal raw")
-	defer terminal.Restore(0, oldState)
+	defer util.RestoreTerminal(oldState)
 	var changed bool
 	if useOwnSSH {
 		changed = ssh.Connect(conn, console, func() *string { return nil })
@@ -222,7 +227,6 @@ func loadConns() (result types.Configuration) {
 	p(decoder.Decode(&result), "decoding xml")
 
 	result.AllConnections = listConnections(&result, false)
-	deleteEmptyCommands(&result)
 
 	result.Root.Expanded = true
 	return
@@ -233,27 +237,29 @@ func saveConns(conf *types.Configuration) {
 	tmp := filename + ".tmp"
 	wr, err := os.Create(tmp)
 	p(err, "opening "+filename)
+	defer func() {
+		if err := os.Rename(tmp, filename); err != nil {
+			p(os.Remove(filename), "deleting old connections.xml")
+			p(os.Rename(tmp, filename), "overwriting connections.xml")
+		}
+	}()
 	defer wr.Close()
-	defer p(os.Rename(tmp, filename), "overwriting connections.xml")
 
 	encoding := unicode.UTF16(unicode.LittleEndian, unicode.ExpectBOM)
 	textEncoder := encoding.NewEncoder()
 
-	encoder := xml.NewEncoder(textEncoder.Writer(wr))
+	writer := textEncoder.Writer(wr)
+	fmt.Fprintln(writer, `<?xml version="1.0" encoding="utf-16"?>
+<!-- ****************************************************************-->
+<!-- *                                                              *-->
+<!-- * PuTTY Configuration Manager save file - All right reserved.  *-->
+<!-- *                                                              *-->
+<!-- ****************************************************************-->
+<!-- The following lines can be modified at your own risks.  -->`)
+
+	encoder := xml.NewEncoder(writer)
 	encoder.Indent("", "  ")
 	p(encoder.Encode(&conf), "encoding xml")
-}
-
-func deleteEmptyCommands(conf *types.Configuration) {
-	for _, conn := range conf.AllConnections {
-		n := []string{}
-		for _, v := range conn.Commands.Commands {
-			if strings.TrimSpace(v) != "" {
-				n = append(n, v)
-			}
-		}
-		conn.Commands.Commands = n
-	}
 }
 
 func p(err error, where string) {

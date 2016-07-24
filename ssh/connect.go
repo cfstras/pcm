@@ -25,8 +25,10 @@ import (
 type answerHandler func(answer string)
 
 type instance struct {
-	terminal  types.Terminal
-	conn      *types.Connection
+	terminal types.Terminal
+	conn     *types.Connection
+	// Answer handlers: push a handler to questions to capture the next line of
+	// input
 	questions chan answerHandler
 
 	session *ssh.Session
@@ -132,7 +134,7 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 				buf := buffers.Get().([]byte)
 				n, err := inst.terminal.Stdin().Read(buf)
 				buf = buf[:n]
-				//fmt.Fprintln(inst.terminal.Stdout(), "my stdin got", n, string(buf[:n]))
+				//fmt.Fprintln(inst.terminal.Stdout(), "my stdin got", util.DebugString(buf))
 
 				if err != nil && err != io.EOF {
 					fmt.Fprintln(inst.terminal.Stdout(), "my stdin got error", err)
@@ -154,7 +156,8 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 					}
 				}
 
-				if newLinePos := bytes.Index(buf, []byte{'\n'}); newLinePos != -1 {
+				// handle questions
+				if newLinePos := bytes.Index(buf, []byte{'\r'}); newLinePos != -1 {
 					// see if we have any answer handlers
 					select {
 					case handler := <-inst.questions:
@@ -194,13 +197,17 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 		for buf := range inputBufChan {
 			if buf == nil {
 				fmt.Fprintln(inst.terminal.Stderr(), "closing stdin:", sshStdin.Close())
+				exit <- true
 				return
 			}
-			_, err := sshStdin.Write(buf)
+			trans := util.TransformInput(buf)
+			//fmt.Fprintln(inst.terminal.Stderr(), "sending", util.DebugString(trans))
+			_, err := sshStdin.Write(trans)
 
 			if err != nil {
 				fmt.Fprintln(inst.terminal.Stderr(), "stdin got error", err)
 				fmt.Fprintln(inst.terminal.Stderr(), "closing stdin:", sshStdin.Close())
+				exit <- true
 				return
 			}
 			if cap(buf) > 256 {
@@ -214,26 +221,7 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 	}()
 
 	startWait := sync.NewCond(&sync.Mutex{})
-	commands := make(chan string, len(inst.conn.Commands.Commands)+1)
-	for _, v := range inst.conn.Commands.Commands {
-		if v != "" {
-			commands <- v
-		}
-	}
-
-	nextCommand := func() *string {
-		select {
-		case v := <-commands:
-			return &v
-		default:
-			if c := moreCommands(); c != nil {
-				return c
-			} else {
-				startWait.Broadcast()
-				return nil
-			}
-		}
-	}
+	nextCommand := util.GetCommandFunc(inst.conn, startWait, moreCommands)
 
 	sshStdin, err := inst.session.StdinPipe()
 	if err != nil {

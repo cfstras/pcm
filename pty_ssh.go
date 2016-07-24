@@ -2,7 +2,19 @@
 
 package main
 
-import "github.com/kr/pty"
+import (
+	"bytes"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"syscall"
+
+	"github.com/kr/pty"
+)
 
 /*
 #include <sys/ioctl.h>
@@ -41,6 +53,7 @@ func connect(c *types.Connection, terminal types.Terminal, moreCommands func() *
 	outFunc := func(pipe *os.File, name string, nextCommand func() *string,
 		startWait *sync.Cond) {
 		buf := make([]byte, 1024)
+		wrotePassword := false
 		for {
 			if atomic.LoadInt32(&procExit) != 0 {
 				return
@@ -48,6 +61,11 @@ func connect(c *types.Connection, terminal types.Terminal, moreCommands func() *
 			n, err := pipe.Read(buf)
 			str := string(buf[:n])
 			fmt.Fprint(terminal.Stdout(), str)
+			if strings.HasSuffix(str, "assword: ") && !wrotePassword && c.Options.LoginMacro {
+				pipe.Write([]byte(c.Login.Password))
+				pipe.Write([]byte("\n"))
+				wrotePassword = true
+			}
 			if strings.HasSuffix(str, "assword: ") || strings.HasSuffix(str, "$ ") ||
 				strings.HasSuffix(str, "# ") {
 				if answer := nextCommand(); answer != nil {
@@ -134,25 +152,7 @@ func connect(c *types.Connection, terminal types.Terminal, moreCommands func() *
 	}
 
 	startWait := sync.NewCond(&sync.Mutex{})
-
-	commands := make(chan string, len(c.Commands.Commands)+2)
-	commands <- c.Login.Password
-	for _, v := range c.Commands.Commands {
-		if v != "" {
-			commands <- v
-		}
-	}
-	nextCommand := func() *string {
-		if len(commands) > 1 {
-			v := <-commands
-			return &v
-		} else if c := moreCommands(); c != nil {
-			return c
-		} else {
-			startWait.Broadcast()
-			return nil
-		}
-	}
+	nextCommand := util.GetCommandFunc(c, startWait, moreCommands)
 
 	sendSize := func(out *os.File, cmd *exec.Cmd) {
 		var row, col C.int
