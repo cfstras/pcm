@@ -108,7 +108,7 @@ func main() {
 	//fmt.Println(conn.Login)
 	//fmt.Println(conn.Command)
 
-	console := &consoleTerminal{
+	var console types.Terminal = &consoleTerminal{
 		exit: make(chan bool),
 	}
 	oldState, err := util.SetupTerminal()

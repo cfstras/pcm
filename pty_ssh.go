@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"syscall"
 
+	"github.com/cfstras/pcm/types"
+	"github.com/cfstras/pcm/util"
 	"github.com/kr/pty"
 )
 
@@ -39,7 +41,6 @@ void setsize(int fd, int rows, int cols) {
 	//printf ("lines %d\n", w.ws_row);
 	//printf ("columns %d\n", w.ws_col);
 }
-
 */
 import "C"
 

@@ -15,8 +15,9 @@ func TransformInput(s []byte) []byte {
 type State terminal.State
 
 func SetupTerminal() (*State, error) {
-	terminal.MakeRaw(int(os.Stdout.Fd()))
+	s, err := terminal.MakeRaw(int(os.Stdout.Fd()))
+	return (*State)(s), err
 }
 func RestoreTerminal(state *State) error {
-	return terminal.Restore(int(os.Stdout.Fd()), oldState)
+	return terminal.Restore(int(os.Stdout.Fd()), (*terminal.State)(state))
 }

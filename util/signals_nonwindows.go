@@ -2,6 +2,11 @@
 
 package util
 
+import (
+	"os"
+	"syscall"
+)
+
 func GetSigwinch() os.Signal {
-	return os.SIGWINCH
+	return syscall.SIGWINCH
 }
