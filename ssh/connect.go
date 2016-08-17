@@ -228,21 +228,18 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 		color.Redln("Error opening stdin pipe", err)
 		return inst.changed
 	}
-	go inFunc(sshStdin, startWait)
 
 	sshStdout, err := inst.session.StdoutPipe()
 	if err != nil {
 		color.Redln("Error opening stdout pipe", err)
 		return inst.changed
 	}
-	go shellOutFunc(sshStdout, sshStdin, "stdout", nextCommand, startWait)
 
 	sshStderr, err := inst.session.StderrPipe()
 	if err != nil {
 		color.Redln("Error opening stderr pipe", err)
 		return inst.changed
 	}
-	go shellOutFunc(sshStderr, sshStdin, "stderr", nextCommand, startWait)
 
 	// Request pseudo terminal
 	if err := inst.session.RequestPty("xterm", 80, 40, modes); err != nil {
@@ -254,6 +251,17 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 		color.Redln("failed to start shell:", err)
 		return inst.changed
 	}
+
+	// Start local terminal
+	if err := inst.terminal.Start(); err != nil {
+		color.Redln("starting terminal:", err)
+		return inst.changed
+	}
+
+	go inFunc(sshStdin, startWait)
+	go shellOutFunc(sshStdout, sshStdin, "stdout", nextCommand, startWait)
+	go shellOutFunc(sshStderr, sshStdin, "stderr", nextCommand, startWait)
+
 	inst.SendWindowSize()
 
 	signalWatcher := func() {

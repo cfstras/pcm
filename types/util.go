@@ -12,4 +12,7 @@ type Terminal interface {
 	Stderr() io.Writer
 	ExitRequests() <-chan bool
 	Signals() <-chan os.Signal
+
+	Start() error
+	Close() error
 }

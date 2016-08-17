@@ -20,6 +20,7 @@ import (
 	"github.com/cfstras/pcm/ssh"
 	"github.com/cfstras/pcm/types"
 	"github.com/cfstras/pcm/util"
+	"github.com/cfstras/pcm/xterm"
 	"github.com/renstrom/fuzzysearch/fuzzy"
 	"golang.org/x/crypto/ssh/terminal"
 	"golang.org/x/net/html/charset"
@@ -35,7 +36,7 @@ func (l StringList) Len() int           { return len(l) }
 func (l StringList) Swap(i, j int)      { l[i], l[j] = l[j], l[i] }
 func (l StringList) Less(i, j int) bool { return strings.Compare(l[i], l[j]) < 0 }
 
-const DEBUG = false
+const DEBUG = true
 
 func main() {
 	defer func() {
@@ -55,10 +56,12 @@ func main() {
 	verbose := false
 	useFuzzySimple := false
 	useOwnSSH := false
+	useTermbox := false
 	flag.BoolVar(&verbose, "verbose", false, "Display more info, such as hostnames and passwords")
 	flag.BoolVar(&verbose, "v", false, "Display more info, such as hostnames and passwords")
 	flag.BoolVar(&useFuzzySimple, "simple", false, "Use simple interface")
 	flag.BoolVar(&useOwnSSH, "ssh", true, "Use golang ssh client instead of os-client")
+	flag.BoolVar(&useTermbox, "xterm", false, "Use own termbox xterm emulator")
 
 	flag.Parse()
 	if pathP != nil {
@@ -108,12 +111,13 @@ func main() {
 	//fmt.Println(conn.Login)
 	//fmt.Println(conn.Command)
 
-	var console types.Terminal = &consoleTerminal{
-		exit: make(chan bool),
+	var console types.Terminal
+	if useTermbox {
+		console = xterm.Terminal()
+	} else {
+		console = ConsoleTerminal()
 	}
-	oldState, err := util.SetupTerminal()
-	p(err, "making terminal raw")
-	defer util.RestoreTerminal(oldState)
+	defer console.Close()
 	var changed bool
 	if useOwnSSH {
 		changed = ssh.Connect(conn, console, func() *string { return nil })
@@ -126,8 +130,23 @@ func main() {
 }
 
 type consoleTerminal struct {
-	exit    chan bool
-	signals chan os.Signal
+	exit     chan bool
+	signals  chan os.Signal
+	oldState *util.State
+}
+
+func ConsoleTerminal() types.Terminal {
+	c := &consoleTerminal{
+		exit: make(chan bool),
+	}
+
+	return c
+}
+
+func (c *consoleTerminal) Start() error {
+	var err error
+	c.oldState, err = util.SetupTerminal()
+	return err
 }
 
 func (c *consoleTerminal) GetSize() (width, height int, err error) {
@@ -151,6 +170,9 @@ func (c *consoleTerminal) Signals() <-chan os.Signal {
 		signal.Notify(c.signals, os.Interrupt, util.GetSigwinch())
 	}
 	return c.signals
+}
+func (c *consoleTerminal) Close() error {
+	return util.RestoreTerminal(c.oldState)
 }
 
 func fuzzySimple(conf *types.Configuration, searchFor string) *types.Connection {

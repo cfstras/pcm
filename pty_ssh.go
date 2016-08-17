@@ -173,6 +173,7 @@ func connect(c *types.Connection, terminal types.Terminal, moreCommands func() *
 		}
 	}
 
+	p(terminal.Start(), "initializing terminal")
 	pty, err := pty.Start(cmd)
 	p(err, "starting ssh")
 

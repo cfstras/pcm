@@ -60,3 +60,9 @@ Hint: If you don't want to put your connections.xml into Downloads, put this ali
 
 # License
 MIT. See [LICENSE.md](https://github.com/cfstras/pcm/LICENSE.md)
+
+## Hints for myself
+
+Use below to test compilation (b/c cgo) on windows:
+
+    docker run -it --rm -v $(pwd):/go/src/github.com/cfstras/pcm:ro -e GOPATH=/go golang:1.6.1
