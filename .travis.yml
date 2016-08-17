@@ -1,25 +1,42 @@
 os:
 - linux
 - osx
+
 before_install:
 - sudo apt-get update -qq || brew update
 - sudo apt-get install -y libc6-dev-i386 || which brew
+
 language: go
 go:
-- 1.6.1
-- tip
+- 1.7
+
 script:
 - go get -t -v ./...
-- ./buildall.sh
+- "./buildall.sh"
+
 deploy:
-  provider: s3
-  access_key_id: AKIAJTJB4JEMUSIXJMSA
-  secret_access_key:
-    secure: v45xaTf9c1Kby2ovMCyzRssv1MgJ3C8JEs7KKokVqRZ1s1JsIU+qqtWw779wfbth1AczqBit7uMRCHL4vWxaqmFrGrTlEfh2Ba6QMfrf9/AtBU2YF09SmJFd3YxcFheQFeVsa9lk9052PUqWwExAVo8erf2i6Dp68km/wJELPUezNdLaQKrBzd3SeuuEuCAnUSSMTJll/rJpHqoqpNVjdDsLAK4PBeCxelIViZ9AAmerEO5TSx0HuwYBQ1SDFOwHYqyel+EgzpuoTQ/dGGa3Lc8YgNJloggeozVHB+zBy6FYDQeA63+l1LsyUAGbUOM4SMw35j1STfKFqedeQu7l6D0P7fNd/lJjqyTkDpn8cEOF7l/gGRVXBUpa1RBXKYzuHd6U+P5QOsHjue3Apgit24APUkDmADdJgRkdYTnLgV/kTVSjSzTw74AptuxVuurx/XVcBWAIKxC7ORuDCyY/etJb4Mt38LNvX52u7ZPcajluTxLDyKYNLM+01vG6Vw5mzFMT/qlEpZCWobXqzQuhV/apBm6YuUW5ni2XygJ9hzHSGFZ8L2TX55lZrZObBUOIgprqgOqmjv61eyqx/YdBKzQwm0tRuC1Tp/UN8NW0C9Xiii8JoMzzThC4T7vm7VqsRrD7oU4ZzW4tCqadX0o7lr1638a0wE6Y0LDBcu0lq5I=
-  bucket: cfs-travis
-  skip_cleanup: true
-  acl: public_read
-  region: eu-west-1
-  local_dir: build
-  detect_encoding: true
-  upload-dir: "cfstras/pcm"
+  - provider: releases
+    api_key:
+      secure: HNB9iHDuVUW799LFmsvYREM7wvi1mRCOu0eMqCbTGPLoymSsUAlZof5OHdHHZu2vN1o1JysBlTWXxNTtlvnobPpNIF0jlCupoUB+Teg3sAUz4QMocbYDa1eIcGq7K5eFQ4APiLndsPVJzWJO9xEXhNW9k0PycynkAehJyPfS3HWn3Q2sEchxq9R1O2Lcgo1ebHFh+QgacAoWgMQC6/sBCZ/Z1kCr6RE/QLfTqtaX4og1zo73Iato8gV7l6MF/VlYkwc/1yDxsodqeQ3T4bfCcjOefVd9gvir2qWv0W6eSKn19/MtzoIN4wWIBR5yGmqmBnz2SRXq791i4ux/eiY489OwrVEwbpyq62K8WCj6tB7dKEd4AJ6dva35L2r5gwYd5qXrsDnWrJYK7F+zriw7j3fiwpKThmbO4PZitaczwfhN0/UFRavwK3PW7jN5SaObtZ/afLFu29/IFuXFCNQwMkMnpnH3rYUxwcJGWTFEHEELyyxumvAKatO2QDL4BctdvicJWhy/cYs9XxaP1ffEVALDMTLd6X+dig1Ou9D19PB/dlF1aUAAg8p8/ceKCcPvoO2Pko8nwlbAk0CGTGn/D3kn0frawXuhYvGKaVBwyQWd5yzm0XUs13e6yQTHfqoE8eYehRKrZeIdlGkLGsSMgrp/ijCN7vSU77koI+oSIkw=
+    skip_cleanup: true
+    file:
+      - build/pcm-linux-x86
+      - build/pcm-linux-x64
+    on:
+      tags: true
+      condition: "$TRAVIS_OS_NAME != osx"
+
+  - provider: releases
+    api_key:
+      secure: HNB9iHDuVUW799LFmsvYREM7wvi1mRCOu0eMqCbTGPLoymSsUAlZof5OHdHHZu2vN1o1JysBlTWXxNTtlvnobPpNIF0jlCupoUB+Teg3sAUz4QMocbYDa1eIcGq7K5eFQ4APiLndsPVJzWJO9xEXhNW9k0PycynkAehJyPfS3HWn3Q2sEchxq9R1O2Lcgo1ebHFh+QgacAoWgMQC6/sBCZ/Z1kCr6RE/QLfTqtaX4og1zo73Iato8gV7l6MF/VlYkwc/1yDxsodqeQ3T4bfCcjOefVd9gvir2qWv0W6eSKn19/MtzoIN4wWIBR5yGmqmBnz2SRXq791i4ux/eiY489OwrVEwbpyq62K8WCj6tB7dKEd4AJ6dva35L2r5gwYd5qXrsDnWrJYK7F+zriw7j3fiwpKThmbO4PZitaczwfhN0/UFRavwK3PW7jN5SaObtZ/afLFu29/IFuXFCNQwMkMnpnH3rYUxwcJGWTFEHEELyyxumvAKatO2QDL4BctdvicJWhy/cYs9XxaP1ffEVALDMTLd6X+dig1Ou9D19PB/dlF1aUAAg8p8/ceKCcPvoO2Pko8nwlbAk0CGTGn/D3kn0frawXuhYvGKaVBwyQWd5yzm0XUs13e6yQTHfqoE8eYehRKrZeIdlGkLGsSMgrp/ijCN7vSU77koI+oSIkw=
+    skip_cleanup: true
+    file:
+      - build/pcm-osx-x86
+      - build/pcm-osx-x64
+    # overwrite: true
+    on:
+      tags: true
+      condition: "$TRAVIS_OS_NAME == osx"
+
+#after_deploy:
+#  - do_something.sh
