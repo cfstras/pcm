@@ -14,18 +14,20 @@ type terminal struct {
 	exit    chan bool
 	run     bool
 
-	buffer           []string
+	buffer           [][]rune
 	cursor           Pos
 	bottomLineOffset int
 
 	renderEverything chan bool
+	renderCell       chan Pos
+	space            rune
 }
 
 type readWriteMsg struct {
 	err error
 	n   int
 }
-type channelReadWriter struct {
+type ioForwarder struct {
 	pipe   chan []byte
 	status chan readWriteMsg
 }

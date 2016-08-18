@@ -22,6 +22,8 @@ func Terminal() types.Terminal {
 		exit:    make(chan bool),
 
 		renderEverything: make(chan bool, 1),
+		renderCell:       make(chan Pos, 10),
+		space:            ' ',
 	}
 	return t
 }
@@ -40,24 +42,24 @@ func (t *terminal) GetSize() (width, height int, err error) {
 	return
 }
 
-func (c *channelReadWriter) Read(b []byte) (n int, err error) {
+func (c *ioForwarder) Read(b []byte) (n int, err error) {
 	c.pipe <- b
 	status := <-c.status
 	return status.n, status.err
 }
 
-func (c *channelReadWriter) Write(b []byte) (n int, err error) {
+func (c *ioForwarder) Write(b []byte) (n int, err error) {
 	return c.Read(b) // exactly the same method -- just passes the message
 }
 
 func (t *terminal) Stdin() io.Reader {
-	return &channelReadWriter{t.stdin, t.stdinStatus}
+	return &ioForwarder{t.stdin, t.stdinStatus}
 }
 func (t *terminal) Stdout() io.Writer {
-	return &channelReadWriter{t.stdout, t.stdoutStatus}
+	return &ioForwarder{t.stdout, t.stdoutStatus}
 }
 func (t *terminal) Stderr() io.Writer {
-	return &channelReadWriter{t.stderr, t.stderrStatus}
+	return &ioForwarder{t.stderr, t.stderrStatus}
 }
 func (t *terminal) ExitRequests() <-chan bool {
 	return t.exit
@@ -93,20 +95,40 @@ func (t *terminal) outputHandler() {
 func (t *terminal) handleOutput(buf []byte) (int, error) {
 	for _, b := range buf {
 		movement, draw := t.displayMapping(b)
-		line := t.buffer[t.cursor.x]
-		if len(line) <= t.cursor.y {
+		line := t.buffer[t.cursor.y]
+		if len(line) <= t.cursor.x {
 			line := append(line, draw)
-			t.buffer[t.cursor.x] = line
+			t.buffer[t.cursor.y] = line
 		} else {
-			line[t.cursor.y] = draw
+			line[t.cursor.x] = draw
 		}
-		if movement.x > 0 {
-			for i := t.movement.x; i > 0; i-- {
-				//TODO
+		if movement.x != 0 {
+			if movement.x == math.MaxInt32 {
+				t.cursor.x = len(line)
+			} else if movement.x == -math.MaxInt32 {
+				t.cursor.x = 0
+			} else {
+				t.cursor.x += movement.x
+			}
+			for len(line) <= t.cursor.x {
+				line = append(line, t.space)
+				t.buffer[t.cursor.y] = line
+			}
+		}
+		if movement.y != 0 {
+			if movement.y == math.MaxInt32 {
+				t.cursor.y = len(line)
+			} else if movement.y == -math.MaxInt32 {
+				t.cursor.y = 0
+			} else {
+				t.cursor.y += movement.y
+			}
+			for len(t.buffer) <= t.cursor.y {
+				t.buffer = append(t.buffer, []rune{t.space})
 			}
 		}
 	}
-	return len(b), nil
+	return len(buf), nil
 }
 
 var mappingTable [256]byteAct
@@ -124,4 +146,23 @@ func (t *terminal) displayMapping(c byte) (Pos, rune) {
 	act := mappingTable[c]
 	return act.movement, act.draw
 	//TODO
+}
+
+func (t *terminal) renderer() {
+	for {
+		select {
+		case <-t.renderEverything:
+			for x, line := range t.buffer {
+				for y, char := range line {
+					termbox.SetCell(x, y, char, termbox.ColorDefault, termbox.ColorDefault)
+				}
+			}
+		case pos := <-t.renderCell:
+			t.renderCellNow(pos)
+		}
+	}
+}
+func (t *terminal) renderCellNow(pos Pos) {
+	//TODO
+	panic("not implemented")
 }
