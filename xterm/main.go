@@ -1,12 +1,23 @@
 package xterm
 
 import (
+	"fmt"
 	"io"
+	_log "log"
 	"math"
 	"os"
+	"os/signal"
+	"runtime/debug"
+	"syscall"
 
+	"github.com/cfstras/go-utils/color"
 	"github.com/cfstras/pcm/types"
 	termbox "github.com/nsf/termbox-go"
+)
+
+var (
+	log     *_log.Logger
+	logfile *os.File
 )
 
 func Terminal() types.Terminal {
@@ -20,6 +31,7 @@ func Terminal() types.Terminal {
 
 		signals: make(chan os.Signal),
 		exit:    make(chan bool),
+		run:     true,
 
 		renderEverything: make(chan bool, 1),
 		renderCell:       make(chan Pos, 10),
@@ -28,12 +40,29 @@ func Terminal() types.Terminal {
 	return t
 }
 func (t *terminal) Start() error {
-	err := termbox.Init()
+	logfile, err := os.OpenFile("pcm-xterm.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
+	if err != nil {
+		return err
+	}
+	log = _log.New(logfile,
+		"", _log.Ltime|_log.LUTC|_log.Lshortfile)
 
+	signals := make(chan os.Signal)
+	go func() {
+		for _ = range signals {
+			t.exit <- true
+		}
+	}()
+	signal.Notify(signals, syscall.SIGTERM)
+
+	err = termbox.Init()
+	if err != nil {
+		return err
+	}
 	go t.inputHandler()
 	go t.outputHandler()
 	go t.renderer()
-	return err
+	return nil
 }
 
 func (t *terminal) GetSize() (width, height int, err error) {
@@ -71,16 +100,38 @@ func (t *terminal) Close() error {
 	if termbox.IsInit {
 		termbox.Close()
 	}
+	if logfile != nil {
+		logfile.Close()
+		logfile = nil
+	}
 	return nil
 }
 
 // Handles input events from the console window and sends them to the stdin pipe
 func (t *terminal) inputHandler() {
+	defer panicHandler()
 	//TODO
+	for b := range t.stdin {
+		for {
+			event := termbox.PollEvent()
+			switch event.Type {
+			case termbox.EventError:
+				t.stdinStatus <- readWriteMsg{event.Err, 0}
+				break
+			case termbox.EventKey:
+				var key byte = byte(event.Key)
+				b[0] = key
+				t.stdinStatus <- readWriteMsg{nil, 1}
+			default:
+				fmt.Println("unknown event", event)
+			}
+		}
+	}
 }
 
 // Handles output from the SSH process and writes them into the buffer
 func (t *terminal) outputHandler() {
+	defer panicHandler()
 	for t.run {
 		select {
 		case b := <-t.stdout:
@@ -93,8 +144,12 @@ func (t *terminal) outputHandler() {
 	}
 }
 func (t *terminal) handleOutput(buf []byte) (int, error) {
+	log.Println("output:", string(buf))
 	for _, b := range buf {
 		movement, draw := t.displayMapping(b)
+		for len(t.buffer) < t.cursor.y+1 {
+			t.buffer = append(t.buffer, []rune{})
+		}
 		line := t.buffer[t.cursor.y]
 		if len(line) <= t.cursor.x {
 			line := append(line, draw)
@@ -123,9 +178,9 @@ func (t *terminal) handleOutput(buf []byte) (int, error) {
 			} else {
 				t.cursor.y += movement.y
 			}
-			for len(t.buffer) <= t.cursor.y {
-				t.buffer = append(t.buffer, []rune{t.space})
-			}
+			//for len(t.buffer) <= t.cursor.y {
+			//	t.buffer = append(t.buffer, []rune{t.space})
+			//}
 		}
 	}
 	return len(buf), nil
@@ -149,6 +204,7 @@ func (t *terminal) displayMapping(c byte) (Pos, rune) {
 }
 
 func (t *terminal) renderer() {
+	defer panicHandler()
 	for {
 		select {
 		case <-t.renderEverything:
@@ -165,4 +221,15 @@ func (t *terminal) renderer() {
 func (t *terminal) renderCellNow(pos Pos) {
 	//TODO
 	panic("not implemented")
+}
+
+func panicHandler() {
+	if err := recover(); err != nil {
+		if termbox.IsInit {
+			termbox.Close()
+		}
+		color.Redln(err)
+		debug.PrintStack()
+		os.Exit(1)
+	}
 }
