@@ -66,8 +66,7 @@ func connect(c *types.Connection, terminal types.Terminal, moreCommands func() *
 				pipe.Write([]byte(c.Login.Password))
 				pipe.Write([]byte("\n"))
 				wrotePassword = true
-			}
-			if strings.HasSuffix(str, "assword: ") || strings.HasSuffix(str, "$ ") ||
+			} else if strings.HasSuffix(str, "assword: ") || strings.HasSuffix(str, "$ ") ||
 				strings.HasSuffix(str, "# ") {
 				if answer := nextCommand(); answer != nil {
 					pipe.Write([]byte(*answer))

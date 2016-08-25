@@ -81,7 +81,8 @@ type Command struct {
 }
 
 type Options struct {
-	LoginMacro   bool   `xml:"loginmacro"`
+	LoginMacro bool `xml:"loginmacro"`
+	// Note that the original PCM sends commands no matter what this flag is set to
 	PostCommands bool   `xml:"postcommands"`
 	EndlineChar  int    `xml:"endlinechar"`
 	SSHPublicKey string `xml:"ssh_public_key,omitempty"`
