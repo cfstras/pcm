@@ -1,7 +1,6 @@
 package xterm
 
 import (
-	"fmt"
 	"io"
 	_log "log"
 	"math"
@@ -9,6 +8,8 @@ import (
 	"os/signal"
 	"runtime/debug"
 	"syscall"
+
+	"github.com/cfstras/pcm/util"
 
 	"github.com/cfstras/go-utils/color"
 	"github.com/cfstras/pcm/types"
@@ -47,13 +48,13 @@ func (t *terminal) Start() error {
 	log = _log.New(logfile,
 		"", _log.Ltime|_log.LUTC|_log.Lshortfile)
 
-	signals := make(chan os.Signal)
+	osSignals := make(chan os.Signal)
 	go func() {
-		for _ = range signals {
+		for _ = range osSignals {
 			t.exit <- true
 		}
 	}()
-	signal.Notify(signals, syscall.SIGTERM)
+	signal.Notify(osSignals, syscall.SIGTERM)
 
 	err = termbox.Init()
 	if err != nil {
@@ -122,8 +123,14 @@ func (t *terminal) inputHandler() {
 				var key byte = byte(event.Key)
 				b[0] = key
 				t.stdinStatus <- readWriteMsg{nil, 1}
+			case termbox.EventResize:
+				t.signals <- util.GetSigwinch()
+				// no input, go on
+			case termbox.EventMouse:
+				// ignore mouse
+				log.Print("Mouse: ", event.MouseX, event.MouseY)
 			default:
-				fmt.Println("unknown event", event)
+				log.Println("unknown event", event)
 			}
 		}
 	}
@@ -183,6 +190,7 @@ func (t *terminal) handleOutput(buf []byte) (int, error) {
 			//}
 		}
 	}
+	t.renderEverything <- true
 	return len(buf), nil
 }
 
@@ -199,6 +207,8 @@ func init() {
 
 func (t *terminal) displayMapping(c byte) (Pos, rune) {
 	act := mappingTable[c]
+	log.Println("Mapping", string([]rune{rune(c)}), "to", act.movement,
+		string([]rune{act.draw}))
 	return act.movement, act.draw
 	//TODO
 }
@@ -208,10 +218,16 @@ func (t *terminal) renderer() {
 	for {
 		select {
 		case <-t.renderEverything:
-			for x, line := range t.buffer {
-				for y, char := range line {
+			log.Println("rendering everything")
+			for y, line := range t.buffer {
+				log.Println("rendering", y, string(line))
+				for x, char := range line {
 					termbox.SetCell(x, y, char, termbox.ColorDefault, termbox.ColorDefault)
 				}
+			}
+			err := termbox.Flush()
+			if err != nil {
+				log.Println("sync:", err)
 			}
 		case pos := <-t.renderCell:
 			t.renderCellNow(pos)
