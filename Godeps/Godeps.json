@@ -13,7 +13,7 @@
 		},
 		{
 			"ImportPath": "github.com/daviddengcn/go-colortext",
-			"Rev": "3b18c8575a432453d41fdafb340099fff5bba2f7"
+			"Rev": "805cee6e0d43c72ba1d4e3275965ff41e0da068a"
 		},
 		{
 			"ImportPath": "github.com/gizak/termui",
@@ -21,21 +21,22 @@
 		},
 		{
 			"ImportPath": "github.com/kr/pty",
-			"Comment": "release.r56-28-g5cf931e",
-			"Rev": "5cf931ef8f76dccd0910001d74a58a7fca84a83d"
+			"Comment": "v1.0.0",
+			"Rev": "2c10821df3c3cf905230d078702dfbe9404c9b23"
 		},
 		{
 			"ImportPath": "github.com/mattn/go-runewidth",
-			"Rev": "5890272cd41c5103531cd7b79e428d99c9e97f76"
+			"Comment": "v0.0.2-1-g14207d2",
+			"Rev": "14207d285c6c197daabb5c9793d63e7af9ab2d50"
 		},
 		{
 			"ImportPath": "github.com/nsf/termbox-go",
-			"Rev": "785b5546a97f27460cfbc4c77132a46b90beb834"
+			"Rev": "7994c181db7761ca3c67a217068cf31826113f5f"
 		},
 		{
 			"ImportPath": "github.com/renstrom/fuzzysearch/fuzzy",
-			"Comment": "v1.0.0",
-			"Rev": "d4ca9dfccd55dc6b076f9880d49c35315922c1f4"
+			"Comment": "v1.0.0-2-g2d205ac",
+			"Rev": "2d205ac6ec17a839a94bdbfd16d2fa6c6dada2e0"
 		},
 		{
 			"ImportPath": "golang.org/x/crypto/curve25519",
