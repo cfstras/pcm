@@ -10,7 +10,7 @@ import (
 )
 
 // maps from OS signals to signals sent to SSH
-var signalMap map[os.Signal]ssh.Signal = map[os.Signal]ssh.Signal{
+var signalMap = map[os.Signal]ssh.Signal{
 	syscall.SIGABRT:  ssh.SIGABRT,
 	syscall.SIGALRM:  ssh.SIGALRM,
 	syscall.SIGFPE:   ssh.SIGFPE,

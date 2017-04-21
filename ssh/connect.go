@@ -45,9 +45,30 @@ func Connect(conn *types.Connection, terminal types.Terminal, moreCommands func(
 	return inst.connect(moreCommands)
 }
 
-func SSHAgent(sock string) ssh.AuthMethod {
+func openAgentSocket(sock string) ssh.AuthMethod {
 	if sshAgent, err := net.Dial("unix", sock); err == nil {
-		return ssh.PublicKeysCallback(agent.NewClient(sshAgent).Signers)
+		return ssh.PublicKeysCallback(func() ([]ssh.Signer, error) {
+			signers, err := agent.NewClient(sshAgent).Signers()
+			if len(signers) == 0 {
+				color.Redln("Warning: no SSH keys in agent.")
+			} else {
+				keys := ""
+				for _, s := range signers {
+					asString := fmt.Sprintf(" %s", s.PublicKey())
+					if keys != "" {
+						keys += "; "
+					}
+					split := strings.SplitN(asString, " ", 4)
+					if len(split) == 4 {
+						keys += split[3]
+					} else {
+						keys += asString[:10] + "..."
+					}
+				}
+				color.Yellowln("SSH keys registered:", keys, "\r")
+			}
+			return signers, err
+		})
 	}
 	return nil
 }
@@ -61,7 +82,9 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 	}
 	sock := os.Getenv("SSH_AUTH_SOCK")
 	if sock != "" {
-		config.Auth = append(config.Auth, SSHAgent(sock))
+		config.Auth = append(config.Auth, openAgentSocket(sock))
+	} else {
+		color.Redln("Warning: no SSH agent running.")
 	}
 
 	addr := fmt.Sprint(inst.conn.Info.Host, ":", inst.conn.Info.Port)
@@ -97,7 +120,7 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 		}
 	}()
 
-	var procExit int32 = 0
+	var procExit int32
 	shellOutFunc := func(stdErrOut io.Reader, stdin io.Writer, name string, nextCommand func() *string,
 		startWait *sync.Cond) {
 		buf := make([]byte, 1024)
@@ -131,6 +154,9 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 			if strings.HasSuffix(str, "assword: ") || strings.HasSuffix(str, "$ ") ||
 				strings.HasSuffix(str, "# ") {
 				if answer := nextCommand(); answer != nil {
+					fmt.Println("\r\n--- Got", str[len(str)-4:],
+						"- writing next cmd", *answer, "---\r")
+					//TODO wait for this to be sent
 					stdin.Write([]byte(*answer))
 					stdin.Write([]byte("\n"))
 				}
