@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 
 	"github.com/cfstras/go-utils/color"
 	"github.com/cfstras/pcm/types"
@@ -43,12 +45,23 @@ func Connect(conn *types.Connection, terminal types.Terminal, moreCommands func(
 	return inst.connect(moreCommands)
 }
 
+func SSHAgent(sock string) ssh.AuthMethod {
+	if sshAgent, err := net.Dial("unix", sock); err == nil {
+		return ssh.PublicKeysCallback(agent.NewClient(sshAgent).Signers)
+	}
+	return nil
+}
+
 func (inst *instance) connect(moreCommands func() *string) bool {
 	config := &ssh.ClientConfig{
 		User:            inst.conn.Login.User,
 		Auth:            []ssh.AuthMethod{ssh.Password(inst.conn.Login.Password)},
 		HostKeyCallback: inst.hostKeyCallback,
 		Timeout:         20 * time.Second,
+	}
+	sock := os.Getenv("SSH_AUTH_SOCK")
+	if sock != "" {
+		config.Auth = append(config.Auth, SSHAgent(sock))
 	}
 
 	addr := fmt.Sprint(inst.conn.Info.Host, ":", inst.conn.Info.Port)
@@ -57,6 +70,9 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 		color.Redln("Connecting to", addr, ":", err)
 		return inst.changed
 	}
+	//if sock != "" { // agent forwarding
+	//	agent.ForwardToRemote(client, sock)
+	//}
 
 	// Each ClientConn can support multiple interactive sessions,
 	// represented by a Session.
