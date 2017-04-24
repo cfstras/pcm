@@ -250,15 +250,10 @@ func saveConn(conf *types.Configuration, conn *types.Connection) {
 	currentConf := loadConns()
 	_, exists := currentConf.AllConnections[conn.Path()]
 	if !exists {
-		i := 0
 		for k := range currentConf.AllConnections {
-			if i == 3 {
-				break
-			}
-			fmt.Println("example:", k)
-			i++
+			fmt.Println("example:", k, "\r")
 		}
-		fmt.Println("searching:", conn.Path())
+		fmt.Println("searching:", conn.Path(), "\r")
 		color.Redln("Not saving a connection that was already deleted...\r")
 		return
 	}

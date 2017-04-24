@@ -176,12 +176,12 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 
 		go func() {
 			writeRightNow := make([]byte, 0, 3)
+			var lastChars [3]byte
 			for {
 				buf := buffers.Get().([]byte)
 				n, err := inst.terminal.Stdin().Read(buf)
 				buf = buf[:n]
 				//fmt.Fprintln(inst.terminal.Stdout(), "my stdin got", util.DebugString(buf))
-
 				if err != nil && err != io.EOF {
 					fmt.Fprintln(inst.terminal.Stdout(), "my stdin got error", err)
 					inputBufChan <- nil
@@ -190,16 +190,33 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 				}
 				writeRightNow = writeRightNow[:0]
 				if err == io.EOF {
-					writeRightNow = append(writeRightNow, 0x04)
+					writeRightNow = append(writeRightNow, 'D'&0x1f)
 					inputBufChan <- nil
 					startWait.Broadcast()
 					return
 				}
 				// ctrl+c, ctrl+d, ctrl+z
-				for _, c := range []byte{0x04, 0x03, 0x1a} {
+				for _, c := range []byte{'C' & 0x1f, 'D' & 0x1f, 'Z' & 0x1f} {
 					if bytes.Contains(buf, []byte{c}) {
 						writeRightNow = append(writeRightNow, c)
 					}
+				}
+
+				for i := len(buf) - 3; i < len(buf); i++ {
+					if i < 0 {
+						continue
+					}
+					lastChars[0], lastChars[1], lastChars[2] = lastChars[1],
+						lastChars[2], buf[i]
+				}
+				if lastChars == [3]byte{'\r', '~', '.'} ||
+					lastChars == [3]byte{'C' & 0x1f, '~', '.'} ||
+					lastChars == [3]byte{'Z' & 0x1f, '~', '.'} {
+
+					color.Redln("Got ~C... aborting.")
+					inputBufChan <- nil
+					startWait.Broadcast()
+					return
 				}
 
 				// handle questions
@@ -213,7 +230,7 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 						buf = buf[newLinePos+1:]
 						if len(buf) == 0 {
 							if cap(buf) > 256 {
-								buffers.Put(buf)
+								buffers.Put(buf[:cap(buf)])
 							}
 							continue
 						}
@@ -257,7 +274,7 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 				return
 			}
 			if cap(buf) > 256 {
-				buffers.Put(buf)
+				buffers.Put(buf[:cap(buf)])
 			}
 		}
 	}
