@@ -5,11 +5,15 @@
 	"Deps": [
 		{
 			"ImportPath": "github.com/cfstras/go-utils/color",
-			"Rev": "1e9354fc5f32c3d8847a8d73d4f858e9f7acc62f"
+			"Rev": "d7831c57ce9e241e51186384a08285da75bf205f"
+		},
+		{
+			"ImportPath": "github.com/cfstras/go-utils/lock",
+			"Rev": "d7831c57ce9e241e51186384a08285da75bf205f"
 		},
 		{
 			"ImportPath": "github.com/cfstras/go-utils/math",
-			"Rev": "1e9354fc5f32c3d8847a8d73d4f858e9f7acc62f"
+			"Rev": "d7831c57ce9e241e51186384a08285da75bf205f"
 		},
 		{
 			"ImportPath": "github.com/daviddengcn/go-colortext",
@@ -32,6 +36,11 @@
 		{
 			"ImportPath": "github.com/nsf/termbox-go",
 			"Rev": "7994c181db7761ca3c67a217068cf31826113f5f"
+		},
+		{
+			"ImportPath": "github.com/pkg/errors",
+			"Comment": "v0.8.0-4-gff09b13",
+			"Rev": "ff09b135c25aae272398c51a07235b90a75aa4f0"
 		},
 		{
 			"ImportPath": "github.com/renstrom/fuzzysearch/fuzzy",
