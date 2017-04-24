@@ -17,6 +17,7 @@ import (
 	"golang.org/x/text/encoding/unicode"
 
 	"github.com/cfstras/go-utils/color"
+	"github.com/cfstras/go-utils/lock"
 	"github.com/cfstras/pcm/ssh"
 	"github.com/cfstras/pcm/types"
 	"github.com/cfstras/pcm/util"
@@ -35,7 +36,7 @@ func (l StringList) Len() int           { return len(l) }
 func (l StringList) Swap(i, j int)      { l[i], l[j] = l[j], l[i] }
 func (l StringList) Less(i, j int) bool { return strings.Compare(l[i], l[j]) < 0 }
 
-const DEBUG = false
+var DEBUG = false
 
 func main() {
 	defer func() {
@@ -47,9 +48,6 @@ func main() {
 			os.Exit(1)
 		}
 	}()
-	if DEBUG {
-		go http.ListenAndServe(":3000", nil)
-	}
 
 	pathP := flag.String("connectionsPath", connectionsPath, "Path to PuTTY connections.xml")
 	verbose := false
@@ -59,11 +57,12 @@ func main() {
 	flag.BoolVar(&verbose, "v", false, "Display more info, such as hostnames and passwords")
 	flag.BoolVar(&useFuzzySimple, "simple", false, "Use simple interface")
 	flag.BoolVar(&useOwnSSH, "ssh", true, "Use golang ssh client instead of os-client")
-
+	flag.BoolVar(&DEBUG, "debug", false, "enable debug server on :3000")
 	flag.Parse()
 	if pathP != nil {
 		connectionsPath = *pathP
 	}
+	connectionsPath = replaceHome(connectionsPath)
 
 	if flag.NArg() > 1 {
 		flag.Usage()
@@ -73,6 +72,9 @@ func main() {
 	var searchFor string
 	if flag.NArg() == 1 {
 		searchFor = flag.Arg(0)
+	}
+	if DEBUG {
+		go http.ListenAndServe(":3000", nil)
 	}
 
 	conf := loadConns()
@@ -116,13 +118,17 @@ func main() {
 	defer util.RestoreTerminal(oldState)
 	var changed bool
 	if useOwnSSH {
-		changed = ssh.Connect(conn, console, func() *string { return nil })
+		changed = ssh.Connect(conn, console, func() *string { return nil },
+			func(a *types.Connection) {
+				saveConn(&conf, conn)
+			})
 	} else {
 		changed = connect(conn, console, func() *string { return nil })
+		if changed {
+			saveConns(&conf)
+		}
 	}
-	if changed {
-		saveConns(&conf)
-	}
+
 }
 
 type consoleTerminal struct {
@@ -215,7 +221,7 @@ func replaceHome(in string) string {
 }
 
 func loadConns() (result types.Configuration) {
-	filename := replaceHome(connectionsPath)
+	filename := connectionsPath
 	rd, err := os.Open(filename)
 	p(err, "opening "+filename)
 	defer rd.Close()
@@ -232,8 +238,37 @@ func loadConns() (result types.Configuration) {
 	return
 }
 
+func saveConn(conf *types.Configuration, conn *types.Connection) {
+	filename := connectionsPath
+	color.Yellowln("Saving connections.xml...\r")
+	flock, err := lock.Try(filename, true)
+	if err != nil {
+		color.Redln("Error: ", err)
+		return
+	}
+	defer flock.Unlock()
+	currentConf := loadConns()
+	_, exists := currentConf.AllConnections[conn.Path()]
+	if !exists {
+		i := 0
+		for k := range currentConf.AllConnections {
+			if i == 3 {
+				break
+			}
+			fmt.Println("example:", k)
+			i++
+		}
+		fmt.Println("searching:", conn.Path())
+		color.Redln("Not saving a connection that was already deleted...\r")
+		return
+	}
+	*currentConf.AllConnections[conn.Path()] = *conn
+	saveConns(&currentConf)
+	color.Yellowln("done.\r")
+}
+
 func saveConns(conf *types.Configuration) {
-	filename := replaceHome(connectionsPath)
+	filename := connectionsPath
 	tmp := filename + ".tmp"
 	wr, err := os.Create(tmp)
 	p(err, "opening "+filename)

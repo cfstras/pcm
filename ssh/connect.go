@@ -31,16 +31,20 @@ type instance struct {
 	conn     *types.Connection
 	// Answer handlers: push a handler to questions to capture the next line of
 	// input
-	questions chan answerHandler
+	questions   chan answerHandler
+	saveChanges func(*types.Connection)
 
 	session *ssh.Session
 	changed bool
 }
 
-func Connect(conn *types.Connection, terminal types.Terminal, moreCommands func() *string) bool {
+func Connect(conn *types.Connection, terminal types.Terminal,
+	moreCommands func() *string, saveChanges func(*types.Connection)) bool {
+
 	inst := &instance{
 		terminal: terminal, conn: conn,
-		questions: make(chan answerHandler, 1),
+		questions:   make(chan answerHandler, 1),
+		saveChanges: saveChanges,
 	}
 	return inst.connect(moreCommands)
 }
@@ -286,11 +290,11 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 	}
 	go shellOutFunc(sshStderr, sshStdin, "stderr", nextCommand, startWait)
 
-	// Request pseudo terminal
 	if err := inst.session.RequestPty("xterm", 80, 40, modes); err != nil {
 		color.Redln("request for pseudo terminal failed:", err)
 		return inst.changed
 	}
+
 	// Start remote shell
 	if err := inst.session.Shell(); err != nil {
 		color.Redln("failed to start shell:", err)
@@ -352,8 +356,9 @@ func (inst *instance) hostKeyCallback(hostname string, remote net.Addr, key ssh.
 
 	if len(oldPublicKey) == 0 {
 		color.Yellowln("Registering new SSH Public Key", key.Type(),
-			newPublicString)
+			newPublicString, "\r")
 		inst.conn.Options.SSHPublicKey = hex.EncodeToString(newPublicKey)
+		inst.saveChanges(inst.conn)
 		inst.changed = true
 		return nil
 	}
@@ -367,7 +372,7 @@ func (inst *instance) hostKeyCallback(hostname string, remote net.Addr, key ssh.
 	}
 	color.Redln("-----POSSIBLE ATTACK-----\nSSH key changed! expected (md5):",
 		oldPublicString,
-		"got:", newPublicString, "type:", key.Type())
+		"got:", newPublicString, "type:", key.Type(), "\r")
 	inst.terminal.Stderr().Write([]byte("Accept change [Ny]? "))
 
 	buf := make([]byte, 128)
