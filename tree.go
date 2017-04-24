@@ -118,11 +118,11 @@ func descendConnections(prefix string, node *types.Container,
 	for i := range node.Connections {
 		c := &node.Connections[i]
 		key := prefix + "/" + c.Name
+		c.Path_ = key
 		if includeDescription {
 			key += "  " + c.Info.Description
 		}
 		conns[key] = c
-		c.Path_ = key
 	}
 	for i := range node.Containers {
 		n := &node.Containers[i]

@@ -239,6 +239,9 @@ func loadConns() (result types.Configuration) {
 }
 
 func saveConn(conf *types.Configuration, conn *types.Connection) {
+	if conn == nil {
+		return
+	}
 	filename := connectionsPath
 	color.Yellowln("Saving connections.xml...\r")
 	flock, err := lock.Try(filename, true)
@@ -248,16 +251,20 @@ func saveConn(conf *types.Configuration, conn *types.Connection) {
 	}
 	defer flock.Unlock()
 	currentConf := loadConns()
-	_, exists := currentConf.AllConnections[conn.Path()]
+	searchPath := strings.TrimSpace(conn.Path())
+	_, exists := currentConf.AllConnections[searchPath]
 	if !exists {
-		for k := range currentConf.AllConnections {
-			fmt.Println("example:", k, "\r")
+		for k, v := range currentConf.AllConnections {
+			if strings.HasSuffix(strings.TrimSpace(k), strings.TrimSpace(conn.Name)) {
+				fmt.Println("example  :", k, ":", v.Path(), "\r")
+				fmt.Println("got   -", []byte(k), "-\r\nsearch-", []byte(searchPath), "-")
+			}
 		}
 		fmt.Println("searching:", conn.Path(), "\r")
 		color.Redln("Not saving a connection that was already deleted...\r")
 		return
 	}
-	*currentConf.AllConnections[conn.Path()] = *conn
+	*currentConf.AllConnections[searchPath] = *conn
 	saveConns(&currentConf)
 	color.Yellowln("done.\r")
 }
