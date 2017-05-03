@@ -103,7 +103,7 @@ func main() {
 			if v := f(); v == nil {
 				break
 			} else {
-				fmt.Println(v)
+				fmt.Println(*v)
 			}
 		}
 	}

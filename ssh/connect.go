@@ -88,13 +88,13 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 	if sock != "" {
 		config.Auth = append(config.Auth, openAgentSocket(sock))
 	} else {
-		color.Redln("Warning: no SSH agent running.")
+		color.Redln("Warning: no SSH agent running.\r")
 	}
 
 	addr := fmt.Sprint(inst.conn.Info.Host, ":", inst.conn.Info.Port)
 	client, err := ssh.Dial("tcp", addr, config)
 	if err != nil {
-		color.Redln("Connecting to", addr, ":", err)
+		color.Redln("Connecting to", addr, ":", err, "\r")
 		return inst.changed
 	}
 	//if sock != "" { // agent forwarding
@@ -158,8 +158,8 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 			if strings.HasSuffix(str, "assword: ") || strings.HasSuffix(str, "$ ") ||
 				strings.HasSuffix(str, "# ") {
 				if answer := nextCommand(); answer != nil {
-					fmt.Println("\r\n--- Got", str[len(str)-4:],
-						"- writing next cmd", *answer, "---\r")
+					//fmt.Println("\r\n--- Got", str[len(str)-4:],
+					//	"- writing next cmd", *answer, "---\r")
 					//TODO wait for this to be sent
 					stdin.Write([]byte(*answer))
 					stdin.Write([]byte("\n"))
