@@ -1,19 +1,19 @@
 {
 	"ImportPath": "github.com/cfstras/pcm",
 	"GoVersion": "go1.8",
-	"GodepVersion": "v79",
+	"GodepVersion": "v75",
 	"Deps": [
 		{
 			"ImportPath": "github.com/cfstras/go-utils/color",
-			"Rev": "d7831c57ce9e241e51186384a08285da75bf205f"
+			"Rev": "41158925fcf51848db13461d7fad20e23fe9d3c4"
 		},
 		{
 			"ImportPath": "github.com/cfstras/go-utils/lock",
-			"Rev": "d7831c57ce9e241e51186384a08285da75bf205f"
+			"Rev": "41158925fcf51848db13461d7fad20e23fe9d3c4"
 		},
 		{
 			"ImportPath": "github.com/cfstras/go-utils/math",
-			"Rev": "d7831c57ce9e241e51186384a08285da75bf205f"
+			"Rev": "41158925fcf51848db13461d7fad20e23fe9d3c4"
 		},
 		{
 			"ImportPath": "github.com/daviddengcn/go-colortext",

@@ -49,7 +49,33 @@ func Connect(conn *types.Connection, terminal types.Terminal,
 	return inst.connect(moreCommands)
 }
 
-func openAgentSocket(sock string) ssh.AuthMethod {
+type detectingSigner struct {
+	inner   ssh.Signer
+	didSign bool
+}
+
+func (s *detectingSigner) PublicKey() ssh.PublicKey {
+	return s.inner.PublicKey()
+}
+
+func (s *detectingSigner) Filename() string {
+	asString := fmt.Sprintf(" %s", s.PublicKey())
+	split := strings.SplitN(asString, " ", 4)
+	if len(split) == 4 {
+		return split[3]
+	} else {
+		return asString[:10] + "..."
+	}
+}
+func (s *detectingSigner) Sign(rand io.Reader, data []byte) (*ssh.Signature, error) {
+	s.didSign = true
+	color.Greenln("Key used:", s.Filename(), "\r")
+	return s.inner.Sign(rand, data)
+}
+
+func openAgentSocket(sock string) (ssh.AuthMethod, *[]*detectingSigner) {
+	var wrappedSigners *[]*detectingSigner
+	wrappedSigners = &[]*detectingSigner{}
 	if sshAgent, err := net.Dial("unix", sock); err == nil {
 		return ssh.PublicKeysCallback(func() ([]ssh.Signer, error) {
 			signers, err := agent.NewClient(sshAgent).Signers()
@@ -57,24 +83,22 @@ func openAgentSocket(sock string) ssh.AuthMethod {
 				color.Redln("Warning: no SSH keys in agent.")
 			} else {
 				keys := ""
-				for _, s := range signers {
-					asString := fmt.Sprintf(" %s", s.PublicKey())
+				for i, s := range signers {
 					if keys != "" {
 						keys += "; "
 					}
-					split := strings.SplitN(asString, " ", 4)
-					if len(split) == 4 {
-						keys += split[3]
-					} else {
-						keys += asString[:10] + "..."
-					}
+					ws := &detectingSigner{s, false}
+					keys += ws.Filename()
+					*wrappedSigners = append(*wrappedSigners, ws)
+					signers[i] = ws // replace in interface list
 				}
 				color.Yellowln("SSH keys registered:", keys, "\r")
 			}
 			return signers, err
-		})
+		}), wrappedSigners
 	}
-	return nil
+	color.Yellowln("Warning: no SSH-agent found.")
+	return nil, nil
 }
 
 func (inst *instance) connect(moreCommands func() *string) bool {
@@ -84,9 +108,14 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 		HostKeyCallback: inst.hostKeyCallback,
 		Timeout:         20 * time.Second,
 	}
+	var detectingSigners *[]*detectingSigner
 	sock := os.Getenv("SSH_AUTH_SOCK")
 	if sock != "" {
-		config.Auth = append(config.Auth, openAgentSocket(sock))
+		agentAuth, signers := openAgentSocket(sock)
+		if agentAuth != nil && signers != nil {
+			config.Auth = append(config.Auth, agentAuth)
+			detectingSigners = signers
+		}
 	} else {
 		color.Redln("Warning: no SSH agent running.\r")
 	}
@@ -284,7 +313,27 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 	}()
 
 	startWait := sync.NewCond(&sync.Mutex{})
-	nextCommand := util.GetCommandFunc(inst.conn, startWait, moreCommands)
+	nextCommand := func(c *types.Connection, startWait *sync.Cond, moreCommands util.CommandFunc) util.CommandFunc {
+		passthrough := util.GetCommandFunc(inst.conn, startWait, moreCommands)
+		checkedAuths := false
+		return func() *string {
+			if !checkedAuths && detectingSigners != nil {
+				checkedAuths = true
+				//color.Yellowln("checking whether we used ssh key...\r")
+				for _, a := range *detectingSigners {
+					if a != nil && a.didSign {
+						//color.Yellowln("we did! -- using password as first 'command'\r")
+						return &inst.conn.Login.Password
+					} /* else {
+						color.Yellowln("nope:", a, "\r")
+					}*/
+				}
+			} /*else {
+				color.Yellowln("detectingSigners:", detectingSigners, "checkedAuths:", checkedAuths, "\r")
+			}*/
+			return passthrough()
+		}
+	}(inst.conn, startWait, moreCommands)
 
 	sshStdin, err := inst.session.StdinPipe()
 	if err != nil {
