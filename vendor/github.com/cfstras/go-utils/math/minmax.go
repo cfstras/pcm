@@ -27,6 +27,26 @@ func MinI(v1 int, val ...int) int {
 	return v
 }
 
+func MaxF(v1 float32, val ...float32) float32 {
+	v := v1
+	for _, a := range val {
+		if a > v {
+			v = a
+		}
+	}
+	return v
+}
+
+func MinF(v1 float32, val ...float32) float32 {
+	v := v1
+	for _, a := range val {
+		if a < v {
+			v = a
+		}
+	}
+	return v
+}
+
 func AbsI(i int) int {
 	if i < 0 {
 		return -i
