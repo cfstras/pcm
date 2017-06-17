@@ -160,7 +160,7 @@ func (c *consoleTerminal) Signals() <-chan os.Signal {
 }
 
 func fuzzySimple(conf *types.Configuration, searchFor string) *types.Connection {
-	words := listWords(conf.AllConnections)
+	words := listWords(conf.AllConnections())
 
 	reader := bufio.NewReader(os.Stdin)
 	var found string
@@ -198,7 +198,7 @@ func fuzzySimple(conf *types.Configuration, searchFor string) *types.Connection 
 			break
 		}
 	}
-	conn := conf.AllConnections[found]
+	conn := conf.AllConnections()[found]
 	return conn
 }
 
@@ -232,8 +232,6 @@ func loadConns() (result types.Configuration) {
 	decoder.CharsetReader = DummyReader
 	p(decoder.Decode(&result), "decoding xml")
 
-	result.AllConnections = listConnections(&result, false)
-
 	result.Root.Expanded = true
 	return
 }
@@ -252,19 +250,12 @@ func saveConn(conf *types.Configuration, conn *types.Connection) {
 	defer flock.Unlock()
 	currentConf := loadConns()
 	searchPath := strings.TrimSpace(conn.Path())
-	_, exists := currentConf.AllConnections[searchPath]
+	ptr, exists := currentConf.AllConnections()[searchPath]
 	if !exists {
-		for k, v := range currentConf.AllConnections {
-			if strings.HasSuffix(strings.TrimSpace(k), strings.TrimSpace(conn.Name)) {
-				fmt.Println("example  :", k, ":", v.Path(), "\r")
-				fmt.Println("got   -", []byte(k), "-\r\nsearch-", []byte(searchPath), "-")
-			}
-		}
-		fmt.Println("searching:", conn.Path(), "\r")
 		color.Redln("Not saving a connection that was already deleted...\r")
 		return
 	}
-	*currentConf.AllConnections[searchPath] = *conn
+	*ptr = *conn
 	saveConns(&currentConf)
 	color.Yellowln("done.\r")
 }

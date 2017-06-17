@@ -9,7 +9,12 @@ type Configuration struct {
 	Version      string `xml:"version,attr"`
 	SavePassword bool   `xml:"savepassword,attr"`
 
-	AllConnections map[string]*Connection `xml:"-"`
+	//AllConnections map[string]*Connection `xml:"-"`
+}
+
+func (c *Configuration) AllConnections() map[string]*Connection {
+	//TODO cache
+	return ListConnections(c, false)
 }
 
 type _node struct {
@@ -86,4 +91,34 @@ type Options struct {
 	PostCommands bool   `xml:"postcommands"`
 	EndlineChar  int    `xml:"endlinechar"`
 	SSHPublicKey string `xml:"ssh_public_key,omitempty"`
+}
+
+// lists all connections of config into a path->connection mapping
+func ListConnections(config *Configuration,
+	includeDescription bool) map[string]*Connection {
+
+	conns := make(map[string]*Connection)
+	descendConnections("", &config.Root, conns, includeDescription)
+	return conns
+}
+
+// Recursively descend through connections tree, writing paths->connection mappings
+// into the conns map. Start with prefix ""
+func descendConnections(prefix string, node *Container,
+	conns map[string]*Connection, includeDescription bool) {
+	node.Path_ = prefix
+	for i := range node.Connections {
+		c := &node.Connections[i]
+		key := prefix + "/" + c.Name
+		c.Path_ = key
+		if includeDescription {
+			key += "  " + c.Info.Description
+		}
+		conns[key] = c
+	}
+	for i := range node.Containers {
+		n := &node.Containers[i]
+		descendConnections(prefix+"/"+n.Name, n, conns,
+			includeDescription)
+	}
 }

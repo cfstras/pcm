@@ -210,16 +210,33 @@ func filterTreeDescend(pathPrefix string, node *types.Container, distances map[s
 	newContainers := []types.Container{}
 	for _, c := range node.Containers { // this implicitly copies the struct
 		nextPathPrefix := pathPrefix + c.Name + "/"
-		if pathPrefixInDistances(nextPathPrefix, distances) {
+		if k, _ := pathPrefixInDistances(nextPathPrefix, distances); k {
 			newContainers = append(newContainers, c)
 			nc := &newContainers[len(newContainers)-1]
 			nc.Expanded = true
 			filterTreeDescend(nextPathPrefix, nc, distances)
 		}
 	}
+	minDist := math.MaxInt
+	maxDist := 0
+	for _, d := range distances {
+		maxDist = math.MaxI(maxDist, d)
+		minDist = math.MinI(minDist, d)
+	}
+
 	newConnections := []types.Connection{}
 	for _, c := range node.Connections {
-		if pathPrefixInDistances(pathPrefix+c.Name, distances) {
+		if k, d := pathPrefixInDistances(pathPrefix+c.Name, distances); k {
+			df := 1 - (float32(d)-float32(minDist))/(float32(maxDist)-float32(minDist))
+			df *= df
+			scores := make([]float32, 3)
+			scores[0] = math.MinF(1/3.0, df)
+			df -= 1 / 3.0
+			scores[1] = math.MinF(1/3.0, df)
+			df -= 1 / 3.0
+			scores[2] = math.MinF(1/3.0, df)
+			c.StatusInfo = Sparkline(scores, 0, 1/3.0)
+
 			newConnections = append(newConnections, c)
 		}
 	}
@@ -228,13 +245,13 @@ func filterTreeDescend(pathPrefix string, node *types.Container, distances map[s
 	node.Connections = newConnections
 }
 
-func pathPrefixInDistances(nextPathPrefix string, distances map[string]int) bool {
-	for k := range distances {
+func pathPrefixInDistances(nextPathPrefix string, distances map[string]int) (bool, int) {
+	for k, v := range distances {
 		if strings.HasPrefix(k, nextPathPrefix) {
-			return true
+			return true, v
 		}
 	}
-	return false
+	return false, -1
 }
 
 func drawTree(treeView *SelectList, connectionsIndex map[int]types.Node,
@@ -250,12 +267,11 @@ func drawTree(treeView *SelectList, connectionsIndex map[int]types.Node,
 }
 
 func filter(conf *types.Configuration, input string) (map[string]int, string) {
-
 	input = strings.TrimSpace(input)
 	if input == "" {
 		return nil, ""
 	}
-	connections := listConnections(conf, true)
+	connections := types.ListConnections(conf, true)
 	words := listWords(connections)
 	suggs := fuzzy.RankFindFold(input, words)
 	res := make(map[string]int)

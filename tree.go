@@ -101,36 +101,6 @@ func treeDescend(target *[]string, index map[int]types.Node, pathToIndexMap map[
 	}
 }
 
-// lists all connections of config into a path->connection mapping
-func listConnections(config *types.Configuration,
-	includeDescription bool) map[string]*types.Connection {
-
-	conns := make(map[string]*types.Connection)
-	descendConnections("", &config.Root, conns, includeDescription)
-	return conns
-}
-
-// Recursively descend through connections tree, writing paths->connection mappings
-// into the conns map. Start with prefix ""
-func descendConnections(prefix string, node *types.Container,
-	conns map[string]*types.Connection, includeDescription bool) {
-	node.Path_ = prefix
-	for i := range node.Connections {
-		c := &node.Connections[i]
-		key := prefix + "/" + c.Name
-		c.Path_ = key
-		if includeDescription {
-			key += "  " + c.Info.Description
-		}
-		conns[key] = c
-	}
-	for i := range node.Containers {
-		n := &node.Containers[i]
-		descendConnections(prefix+"/"+n.Name, n, conns,
-			includeDescription)
-	}
-}
-
 // get all keys of the map as a slice
 func listWords(conns map[string]*types.Connection) []string {
 	words := make([]string, 0, len(conns))

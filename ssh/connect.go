@@ -242,7 +242,7 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 					lastChars == [3]byte{'C' & 0x1f, '~', '.'} ||
 					lastChars == [3]byte{'Z' & 0x1f, '~', '.'} {
 
-					color.Redln("Got ~C... aborting.")
+					color.Redln("\r\nGot ~C... aborting.\r")
 					inputBufChan <- nil
 					startWait.Broadcast()
 					return
@@ -288,7 +288,7 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 		startWait.L.Unlock()
 		for buf := range inputBufChan {
 			if buf == nil {
-				fmt.Fprintln(inst.terminal.Stderr(), "closing stdin:", sshStdin.Close())
+				fmt.Fprintln(inst.terminal.Stderr(), "\rclosing stdin:", sshStdin.Close(), "\r")
 				exit <- true
 				return
 			}
@@ -297,8 +297,8 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 			_, err := sshStdin.Write(trans)
 
 			if err != nil {
-				fmt.Fprintln(inst.terminal.Stderr(), "stdin got error", err)
-				fmt.Fprintln(inst.terminal.Stderr(), "closing stdin:", sshStdin.Close())
+				fmt.Fprintln(inst.terminal.Stderr(), "\rstdin got error", err, "\r")
+				fmt.Fprintln(inst.terminal.Stderr(), "\rclosing stdin:", sshStdin.Close(), "\r")
 				exit <- true
 				return
 			}
