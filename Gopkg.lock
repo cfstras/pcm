@@ -2,10 +2,16 @@
 
 
 [[projects]]
+  name = "github.com/aws/aws-sdk-go"
+  packages = ["aws","aws/awserr","aws/awsutil","aws/client","aws/client/metadata","aws/corehandlers","aws/credentials","aws/credentials/ec2rolecreds","aws/credentials/endpointcreds","aws/credentials/stscreds","aws/defaults","aws/ec2metadata","aws/endpoints","aws/request","aws/session","aws/signer/v4","internal/shareddefaults","private/protocol","private/protocol/ec2query","private/protocol/query","private/protocol/query/queryutil","private/protocol/rest","private/protocol/xml/xmlutil","service/ec2","service/sts"]
+  revision = "96358b8282b1a3aa66836d2f2fe66216cc419668"
+  version = "v1.8.44"
+
+[[projects]]
   branch = "master"
   name = "github.com/cfstras/go-utils"
-  packages = ["color","lock","math"]
-  revision = "cc5acba37a97ad8193044eb23a3794ccb3983d0a"
+  packages = ["color","fileutil","lock","math"]
+  revision = "6c017d6814fd52074a96baf43dee8cbd2514e060"
 
 [[projects]]
   name = "github.com/daviddengcn/go-colortext"
@@ -18,6 +24,18 @@
   packages = ["."]
   revision = "e62b5929642af6cf5c34c2d5a680e68810fe9d38"
   version = "v1"
+
+[[projects]]
+  name = "github.com/go-ini/ini"
+  packages = ["."]
+  revision = "d3de07a94d22b4a0972deb4b96d790c2c0ce8333"
+  version = "v1.28.0"
+
+[[projects]]
+  name = "github.com/jmespath/go-jmespath"
+  packages = ["."]
+  revision = "3433f3ea46d9f8019119e7dd41274e112a2359a9"
+  version = "0.2.2"
 
 [[projects]]
   name = "github.com/kr/pty"
@@ -74,6 +92,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "0f4b60c7c10584e5c9992a9d1f6e11511eebb6b9034156a3ed82a6ba5ee5395e"
+  inputs-digest = "91f3137a041df698bb27081f4dbd878f86dab7211d0a02c1e4c4772e42e661d3"
   solver-name = "gps-cdcl"
   solver-version = 1
