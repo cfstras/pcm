@@ -32,7 +32,7 @@ func selectConnection(conf *types.Configuration, input string) *types.Connection
 	connectButton := ui.NewPar(" Connect ")
 
 	menuView := ui.NewRow(
-		ui.NewCol(8, 0, connectButton),
+		ui.NewCol(12, 0, connectButton),
 	)
 
 	selectedButton := 0
@@ -56,14 +56,14 @@ func selectConnection(conf *types.Configuration, input string) *types.Connection
 		ui.NewRow(
 			ui.NewCol(12, 0, debugView)),
 		ui.NewRow(
-			ui.NewCol(6, 0, searchView),
-			ui.NewCol(6, 0, menuView)))
+			ui.NewCol(8, 0, searchView),
+			ui.NewCol(4, 0, menuView)))
 
 	heights := func() {
 		searchView.Height = 3
 		connectButton.Height = searchView.Height
 		menuView.Height = searchView.Height
-		debugView.Height = 5
+		debugView.Height = 6
 		treeView.Height = ui.TermHeight() - searchView.Height - debugView.Height
 	}
 	heights()
@@ -183,8 +183,8 @@ func selectConnection(conf *types.Configuration, input string) *types.Connection
 			} else {
 				n := connectionsIndex[treeView.CurrentSelection]
 				if c, ok := n.(*types.Connection); ok {
-					debugView.Text = fmt.Sprintf("%s %s:%d\n%s",
-						c.Info.Protocol, c.Info.Host, c.Info.Port, c.Info.Description)
+					debugView.Text = fmt.Sprintf("%s %s@%s:%d\n%s",
+						c.Info.Protocol, c.Login.User, c.Info.Host, c.Info.Port, c.Info.Description)
 				} else if _, ok := n.(*types.Container); ok {
 					debugView.Text = ""
 				}

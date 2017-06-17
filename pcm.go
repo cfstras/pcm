@@ -53,11 +53,13 @@ func main() {
 	verbose := false
 	useFuzzySimple := false
 	useOwnSSH := false
+	doImportAWS := false
 	flag.BoolVar(&verbose, "verbose", false, "Display more info, such as hostnames and passwords")
 	flag.BoolVar(&verbose, "v", false, "Display more info, such as hostnames and passwords")
 	flag.BoolVar(&useFuzzySimple, "simple", false, "Use simple interface")
 	flag.BoolVar(&useOwnSSH, "ssh", true, "Use golang ssh client instead of os-client")
 	flag.BoolVar(&DEBUG, "debug", false, "enable debug server on :3000")
+	flag.BoolVar(&doImportAWS, "import-aws", false, "also load hosts from aws")
 	flag.Parse()
 	if pathP != nil {
 		connectionsPath = *pathP
@@ -78,6 +80,13 @@ func main() {
 	}
 
 	conf := loadConns()
+
+	if doImportAWS {
+		if err := importAWS(&conf); err != nil {
+			color.Redln("loading configuration from AWS:", err)
+			return
+		}
+	}
 
 	var conn *types.Connection
 	if useFuzzySimple {
