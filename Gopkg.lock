@@ -20,6 +20,12 @@
   version = "master"
 
 [[projects]]
+  branch = "master"
+  name = "github.com/elazarl/go-bindata-assetfs"
+  packages = ["."]
+  revision = "30f82fa23fd844bd5bb1e5f216db87fd77b5eb43"
+
+[[projects]]
   name = "github.com/gizak/termui"
   packages = ["."]
   revision = "e62b5929642af6cf5c34c2d5a680e68810fe9d38"
@@ -36,6 +42,12 @@
   packages = ["."]
   revision = "3433f3ea46d9f8019119e7dd41274e112a2359a9"
   version = "0.2.2"
+
+[[projects]]
+  name = "github.com/jteeuwen/go-bindata"
+  packages = ["."]
+  revision = "bbd0c6e271208dce66d8fda4bc536453cd27fc4a"
+  version = "v3.0.7"
 
 [[projects]]
   name = "github.com/kr/pty"
@@ -68,6 +80,12 @@
 
 [[projects]]
   branch = "master"
+  name = "github.com/skratchdot/open-golang"
+  packages = ["open"]
+  revision = "75fb7ed4208cf72d323d7d02fd1a5964a7a9073c"
+
+[[projects]]
+  branch = "master"
   name = "golang.org/x/crypto"
   packages = ["curve25519","ed25519","ed25519/internal/edwards25519","ssh","ssh/agent","ssh/terminal"]
   revision = "850760c427c516be930bc91280636328f1a62286"
@@ -92,6 +110,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "91f3137a041df698bb27081f4dbd878f86dab7211d0a02c1e4c4772e42e661d3"
+  inputs-digest = "e4cc650a8747637934d2579012be7322e4ee1489f2adb67e844ef3957cb42228"
   solver-name = "gps-cdcl"
   solver-version = 1

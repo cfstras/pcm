@@ -11,6 +11,7 @@ go:
 - 1.7
 
 script:
+- go generate
 - go get -t -v ./...
 - "./buildall.sh"
 

@@ -18,13 +18,24 @@ import (
 
 	"github.com/cfstras/go-utils/color"
 	"github.com/cfstras/go-utils/lock"
+	"github.com/cfstras/pcm/hterm"
 	"github.com/cfstras/pcm/ssh"
 	"github.com/cfstras/pcm/types"
 	"github.com/cfstras/pcm/util"
+	"github.com/jteeuwen/go-bindata"
 	"github.com/renstrom/fuzzysearch/fuzzy"
 	"golang.org/x/crypto/ssh/terminal"
 	"golang.org/x/net/html/charset"
 )
+
+//go:generate go generate ./hterm
+//go:generate go build -v ./vendor/github.com/jteeuwen/go-bindata/go-bindata
+//go:generate ./go-bindata -debug -pkg hterm -o hterm/assets.go -prefix public/ public/
+
+func never() {
+	a := bindata.Asset{}
+	fmt.Println(a)
+}
 
 var (
 	connectionsPath string = "~/Downloads/connections.xml"
@@ -54,12 +65,14 @@ func main() {
 	useFuzzySimple := false
 	useOwnSSH := false
 	doImportAWS := false
+	doWeb := false
 	flag.BoolVar(&verbose, "verbose", false, "Display more info, such as hostnames and passwords")
 	flag.BoolVar(&verbose, "v", false, "Display more info, such as hostnames and passwords")
 	flag.BoolVar(&useFuzzySimple, "simple", false, "Use simple interface")
 	flag.BoolVar(&useOwnSSH, "ssh", true, "Use golang ssh client instead of os-client")
 	flag.BoolVar(&DEBUG, "debug", false, "enable debug server on :3000")
-	flag.BoolVar(&doImportAWS, "import-aws", false, "also load hosts from aws")
+	flag.BoolVar(&doImportAWS, "aws", false, "also load hosts from aws")
+	flag.BoolVar(&doWeb, "web", false, "enable web console")
 	flag.Parse()
 	if pathP != nil {
 		connectionsPath = *pathP
@@ -77,6 +90,9 @@ func main() {
 	}
 	if DEBUG {
 		go http.ListenAndServe(":3000", nil)
+	}
+	if doWeb {
+		hterm.Run()
 	}
 
 	conf := loadConns()
