@@ -1,3 +1,4 @@
 pcm
 build/
 *.exe
+go-bindata

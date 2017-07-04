@@ -22,7 +22,6 @@ import (
 	"github.com/cfstras/pcm/ssh"
 	"github.com/cfstras/pcm/types"
 	"github.com/cfstras/pcm/util"
-	"github.com/jteeuwen/go-bindata"
 	"github.com/renstrom/fuzzysearch/fuzzy"
 	"golang.org/x/crypto/ssh/terminal"
 	"golang.org/x/net/html/charset"
@@ -31,11 +30,6 @@ import (
 //go:generate go generate ./hterm
 //go:generate go build -v ./vendor/github.com/jteeuwen/go-bindata/go-bindata
 //go:generate ./go-bindata -debug -pkg hterm -o hterm/assets.go -prefix public/ public/
-
-func never() {
-	a := bindata.Asset{}
-	fmt.Println(a)
-}
 
 var (
 	connectionsPath string = "~/Downloads/connections.xml"
