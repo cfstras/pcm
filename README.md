@@ -15,12 +15,12 @@ If you don't have Golang installed or don't want to build yourself (try it, it's
 - Linux: [64 bit][linux-x64] or [32 bit][linux-x64]
 - Mac OSX: [64 bit][osx-x64] or [32 bit][osx-x86]
 
-[linux-x64]: https://github.com/cfstras/pcm/releases/download/1.1/pcm-linux-x64
-[linux-x86]: https://github.com/cfstras/pcm/releases/download/1.1/pcm-linux-x86
-[osx-x64]: https://github.com/cfstras/pcm/releases/download/1.1/pcm-osx-x64
-[osx-x86]: https://github.com/cfstras/pcm/releases/download/1.1/pcm-osx-x86
+[linux-x64]: https://github.com/cfstras/pcm/releases/download/1.2/pcm-linux-x64
+[linux-x86]: https://github.com/cfstras/pcm/releases/download/1.2/pcm-linux-x86
+[osx-x64]: https://github.com/cfstras/pcm/releases/download/1.2/pcm-osx-x64
+[osx-x86]: https://github.com/cfstras/pcm/releases/download/1.2/pcm-osx-x86
 
-# Requirements
+# Requirements to build
 
 - *nix (Successfully tested on OSX and Linux)
 - Golang 1.5+ (Available in most distros, for OSX: Homebrew!)
