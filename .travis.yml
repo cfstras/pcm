@@ -8,10 +8,12 @@ before_install:
 
 language: go
 go:
-- 1.7
+- 1.8
+
+install:
+- go generate
 
 script:
-- go generate
 - go get -t -v ./...
 - "./buildall.sh"
 

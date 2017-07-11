@@ -85,6 +85,7 @@ func main() {
 	if DEBUG {
 		go http.ListenAndServe(":3000", nil)
 	}
+
 	if doWeb {
 		hterm.Run()
 	}
@@ -128,9 +129,13 @@ func main() {
 	}
 	//fmt.Println(conn.Login)
 	//fmt.Println(conn.Command)
-
-	var console types.Terminal = &consoleTerminal{
-		exit: make(chan bool),
+	var console types.Terminal
+	if doWeb {
+		console = hterm.GetConsoleConn()
+	} else {
+		console = &consoleTerminal{
+			exit: make(chan bool),
+		}
 	}
 	oldState, err := util.SetupTerminal()
 	p(err, "making terminal raw")
