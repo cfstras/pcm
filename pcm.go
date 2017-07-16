@@ -136,10 +136,10 @@ func main() {
 		console = &consoleTerminal{
 			exit: make(chan bool),
 		}
+		oldState, err := util.SetupTerminal()
+		p(err, "making terminal raw")
+		defer util.RestoreTerminal(oldState)
 	}
-	oldState, err := util.SetupTerminal()
-	p(err, "making terminal raw")
-	defer util.RestoreTerminal(oldState)
 	var changed bool
 	if useOwnSSH {
 		changed = ssh.Connect(conn, console, func() *string { return nil },

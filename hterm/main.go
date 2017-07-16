@@ -12,6 +12,8 @@ import (
 	"io"
 	"os"
 
+	"strconv"
+
 	"github.com/cfstras/go-utils/math"
 	"github.com/cfstras/pcm/types"
 	assetfs "github.com/elazarl/go-bindata-assetfs"
@@ -76,9 +78,14 @@ func GetConsoleConn() types.Terminal {
 		make(chan []byte), make(chan bool)}
 	go func() {
 		for {
+			if term.conn == nil {
+				term.conn = <-connQueue
+				//TODO select and timeout
+			}
 			mtype, b, err := term.conn.ReadMessage()
 			if err != nil {
-				log.Println("reading: ", err)
+				log.Println("reading: ", err, "waiting for reconnect...")
+				term.conn = nil
 				time.Sleep(1 * time.Second)
 				continue
 			}
@@ -118,19 +125,24 @@ func (t *WSTerminal) Write(b []byte) (int, error) {
 	if _, err := w.Write(b); err != nil {
 		return 0, err
 	}
+	w.Close()
+	log.Println("term write", strconv.QuoteToASCII(string(b)))
 	return len(b), nil
-
 }
 func (t *WSTerminal) Read(p []byte) (n int, err error) {
 	b := <-t.readQueue
+	left := 0
 	if len(b) > len(p) {
 		copy(p, b[:len(p)])
+		left = len(b) - len(p)
 		t.readQueue <- b[len(p):]
 	} else {
 		copy(p, b)
 		t.readRet <- true
 	}
-	return math.MinI(len(b), len(p)), nil
+	length := math.MinI(len(b), len(p))
+	log.Println("term read", strconv.QuoteToASCII(string(p[:length])), ";", left, "left")
+	return length, nil
 }
 func (t *WSTerminal) ExitRequests() <-chan bool {
 	return t.exit
