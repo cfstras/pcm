@@ -3,8 +3,17 @@ os:
 - osx
 
 before_install:
-- sudo apt-get update -qq || brew update
-- sudo apt-get install -y libc6-dev-i386 || which brew
+- |
+  if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then
+    sudo apt-get update -qq
+    sudo apt-get install -y libc6-dev-i386
+  fi
+- |
+  if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then
+    brew update
+    brew install coreutils
+    export PATH="$(brew --prefix coreutils)/libexec/gnubin:/usr/local/bin:$PATH"
+  fi
 
 language: go
 go:
