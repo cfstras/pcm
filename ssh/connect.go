@@ -2,7 +2,6 @@ package ssh
 
 import (
 	"bytes"
-	"crypto/md5"
 	"crypto/subtle"
 	"encoding/hex"
 	"errors"
@@ -18,6 +17,8 @@ import (
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
+
+	"encoding/base64"
 
 	"github.com/cfstras/go-utils/color"
 	"github.com/cfstras/pcm/types"
@@ -417,8 +418,7 @@ func (inst *instance) hostKeyCallback(hostname string, remote net.Addr, key ssh.
 	newPublicKey := key.Marshal()
 	//TODO correctly marshal/unmarshal into xml
 
-	newPublicMD5 := md5.Sum(newPublicKey)
-	newPublicString := hex.EncodeToString(newPublicMD5[:])
+	newPublicString := base64.StdEncoding.EncodeToString(newPublicKey)
 
 	if len(oldPublicKey) == 0 {
 		color.Yellowln("Registering new SSH Public Key", key.Type(),
@@ -429,16 +429,16 @@ func (inst *instance) hostKeyCallback(hostname string, remote net.Addr, key ssh.
 		return nil
 	}
 
-	oldPublicMD5 := md5.Sum(oldPublicKey)
-	oldPublicString := hex.EncodeToString(oldPublicMD5[:])
+	oldPublicString := base64.StdEncoding.EncodeToString(oldPublicKey)
 
 	same := subtle.ConstantTimeCompare(newPublicKey, oldPublicKey)
 	if same == 1 {
 		return nil
 	}
-	color.Redln("-----POSSIBLE ATTACK-----\nSSH key changed! expected (md5):",
-		oldPublicString,
-		"got:", newPublicString, "type:", key.Type(), "\r")
+	color.Redln("-----POSSIBLE ATTACK-----",
+		"\r\nSSH key changed! expected:\r\n",
+		key.Type(), oldPublicString, "\r\ngot:\r\n", key.Type(), newPublicString,
+		"\r")
 	inst.terminal.Stderr().Write([]byte("Accept change [Ny]? "))
 
 	buf := make([]byte, 128)
@@ -447,13 +447,14 @@ func (inst *instance) hostKeyCallback(hostname string, remote net.Addr, key ssh.
 		color.Yellowln("Error reading answer:", err)
 		return err
 	}
-	inst.terminal.Stderr().Write([]byte{'\n'})
+	inst.terminal.Stderr().Write([]byte{'\r', '\n'})
 
 	text := strings.ToLower(string(buf[:n]))
 	if text == "y" || text == "yes" {
 		inst.conn.Options.SSHPublicKey = hex.EncodeToString(newPublicKey)
+		color.Yellowln("\rSaving new public key to connections.xml.\r")
+		inst.saveChanges(inst.conn)
 		inst.changed = true
-		color.Yellowln("Saving new public key to connections.xml on exit.")
 		return nil
 	}
 	return errors.New("Public key not accepted")
