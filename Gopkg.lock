@@ -20,6 +20,12 @@
   version = "master"
 
 [[projects]]
+  branch = "master"
+  name = "github.com/elazarl/go-bindata-assetfs"
+  packages = ["."]
+  revision = "30f82fa23fd844bd5bb1e5f216db87fd77b5eb43"
+
+[[projects]]
   name = "github.com/gizak/termui"
   packages = ["."]
   revision = "e62b5929642af6cf5c34c2d5a680e68810fe9d38"
@@ -30,6 +36,12 @@
   packages = ["."]
   revision = "d3de07a94d22b4a0972deb4b96d790c2c0ce8333"
   version = "v1.28.0"
+
+[[projects]]
+  name = "github.com/gorilla/websocket"
+  packages = ["."]
+  revision = "ea4d1f681babbce9545c9c5f3d5194a789c89f5b"
+  version = "v1.2.0"
 
 [[projects]]
   name = "github.com/jmespath/go-jmespath"
@@ -68,6 +80,18 @@
 
 [[projects]]
   branch = "master"
+  name = "github.com/skratchdot/open-golang"
+  packages = ["open"]
+  revision = "75fb7ed4208cf72d323d7d02fd1a5964a7a9073c"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/tevino/abool"
+  packages = ["."]
+  revision = "3c25f2fe7cd0ef3eabefce1d90efd69a65d35b12"
+
+[[projects]]
+  branch = "master"
   name = "golang.org/x/crypto"
   packages = ["curve25519","ed25519","ed25519/internal/edwards25519","ssh","ssh/agent","ssh/terminal"]
   revision = "850760c427c516be930bc91280636328f1a62286"
@@ -92,6 +116,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "91f3137a041df698bb27081f4dbd878f86dab7211d0a02c1e4c4772e42e661d3"
+  inputs-digest = "2829231388325bb1e23eba2cec6e61612bdd562739631eba7d0308a172761993"
   solver-name = "gps-cdcl"
   solver-version = 1
