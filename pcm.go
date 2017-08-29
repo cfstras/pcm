@@ -136,9 +136,6 @@ func main() {
 		console = &consoleTerminal{
 			exit: make(chan bool),
 		}
-		oldState, err := util.SetupTerminal()
-		p(err, "making terminal raw")
-		defer util.RestoreTerminal(oldState)
 	}
 	var changed bool
 	if useOwnSSH {
@@ -156,8 +153,9 @@ func main() {
 }
 
 type consoleTerminal struct {
-	exit    chan bool
-	signals chan os.Signal
+	exit     chan bool
+	signals  chan os.Signal
+	oldState *util.State
 }
 
 func (c *consoleTerminal) GetSize() (width, height int, err error) {
@@ -181,6 +179,14 @@ func (c *consoleTerminal) Signals() <-chan os.Signal {
 		signal.Notify(c.signals, os.Interrupt, util.GetSigwinch())
 	}
 	return c.signals
+}
+func (c *consoleTerminal) MakeRaw() {
+	var err error
+	c.oldState, err = util.SetupTerminal()
+	p(err, "making terminal raw")
+}
+func (c *consoleTerminal) RestoreRaw() {
+	util.RestoreTerminal(c.oldState)
 }
 
 func fuzzySimple(conf *types.Configuration, searchFor string) *types.Connection {

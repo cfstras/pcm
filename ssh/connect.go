@@ -11,7 +11,6 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -19,6 +18,10 @@ import (
 	"golang.org/x/crypto/ssh/agent"
 
 	"encoding/base64"
+
+	context2 "context"
+
+	"github.com/tevino/abool"
 
 	"github.com/cfstras/go-utils/color"
 	"github.com/cfstras/pcm/types"
@@ -37,6 +40,9 @@ type instance struct {
 
 	session *ssh.Session
 	changed bool
+
+	exitChan      chan bool
+	exitRequested *abool.AtomicBool
 }
 
 func Connect(conn *types.Connection, terminal types.Terminal,
@@ -46,6 +52,9 @@ func Connect(conn *types.Connection, terminal types.Terminal,
 		terminal: terminal, conn: conn,
 		questions:   make(chan answerHandler, 1),
 		saveChanges: saveChanges,
+
+		exitChan:      make(chan bool, 1),
+		exitRequested: abool.New(),
 	}
 	return inst.connect(moreCommands)
 }
@@ -74,11 +83,14 @@ func (s *detectingSigner) Sign(rand io.Reader, data []byte) (*ssh.Signature, err
 	return s.inner.Sign(rand, data)
 }
 
-func openAgentSocket(sock string) (ssh.AuthMethod, *[]*detectingSigner) {
+func (inst *instance) openAgentSocket(sock string) (ssh.AuthMethod, *[]*detectingSigner) {
 	var wrappedSigners *[]*detectingSigner
 	wrappedSigners = &[]*detectingSigner{}
 	if sshAgent, err := net.Dial("unix", sock); err == nil {
 		return ssh.PublicKeysCallback(func() ([]ssh.Signer, error) {
+			if inst.exitRequested.IsSet() {
+				return nil, errors.New("Exit")
+			}
 			signers, err := agent.NewClient(sshAgent).Signers()
 			if len(signers) == 0 {
 				color.Redln("Warning: no SSH keys in agent.")
@@ -102,6 +114,11 @@ func openAgentSocket(sock string) (ssh.AuthMethod, *[]*detectingSigner) {
 	return nil, nil
 }
 
+func (inst *instance) exit() {
+	inst.exitChan <- true
+	inst.exitRequested.Set()
+}
+
 func (inst *instance) connect(moreCommands func() *string) bool {
 	config := &ssh.ClientConfig{
 		User:            inst.conn.Login.User,
@@ -112,7 +129,7 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 	var detectingSigners *[]*detectingSigner
 	sock := os.Getenv("SSH_AUTH_SOCK")
 	if sock != "" {
-		agentAuth, signers := openAgentSocket(sock)
+		agentAuth, signers := inst.openAgentSocket(sock)
 		if agentAuth != nil && signers != nil {
 			config.Auth = append(config.Auth, agentAuth)
 			detectingSigners = signers
@@ -121,12 +138,60 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 		color.Redln("Warning: no SSH agent running.\r")
 	}
 
+	go func() {
+		for range inst.terminal.ExitRequests() {
+			inst.exit()
+		}
+	}()
+
+	tcpConnected := abool.New()
+	signalWatcher := func(cancelFunc func()) {
+		for s := range inst.terminal.Signals() {
+			if !tcpConnected.IsSet() && (s == syscall.SIGINT || s == syscall.SIGTERM) {
+				color.Yellowln("Ctrl+C!")
+				cancelFunc()
+				inst.exit()
+			}
+			sshSignal, ok := signalMap[s]
+			if !ok {
+				color.Yellowln("Unknown signal", s)
+			} else if sshSignal != "" && inst.session != nil {
+				inst.session.Signal(sshSignal)
+			}
+			if s == util.GetSigwinch() {
+				inst.SendWindowSize()
+			} else if s == syscall.SIGTERM {
+				inst.exit()
+			}
+		}
+	}
+
 	addr := fmt.Sprint(inst.conn.Info.Host, ":", inst.conn.Info.Port)
-	client, err := ssh.Dial("tcp", addr, config)
+	d := net.Dialer{Timeout: config.Timeout}
+	context, cancel := context2.WithCancel(context2.Background())
+	go signalWatcher(cancel)
+
+	sshTCPconn, err := d.DialContext(context, "tcp", addr)
 	if err != nil {
-		color.Redln("Connecting to", addr, ":", err, "\r")
+		color.Redln("Dialing to", addr, ":", err, "\r")
 		return inst.changed
 	}
+	if inst.exitRequested.IsSet() {
+		return inst.changed
+	}
+	c, sshChans, sshReqs, err := ssh.NewClientConn(sshTCPconn, addr, config)
+	if err != nil {
+		color.Redln("Opening SSH connection to", addr, ":", err, "\r")
+		return inst.changed
+	}
+	client := ssh.NewClient(c, sshChans, sshReqs)
+
+	if inst.exitRequested.IsSet() {
+		return inst.changed
+	}
+
+	tcpConnected.Set()
+
 	//if sock != "" { // agent forwarding
 	//	agent.ForwardToRemote(client, sock)
 	//}
@@ -147,36 +212,29 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 		ssh.TTY_OP_OSPEED: 14400, // output speed = 14.4kbaud
 	}
 
-	exit := make(chan bool, 1)
-	go func() {
-		for e := range inst.terminal.ExitRequests() {
-			exit <- e
-		}
-	}()
-
-	var procExit int32
+	procExit := abool.New()
 	shellOutFunc := func(stdErrOut io.Reader, stdin io.Writer, name string, nextCommand func() *string,
 		startWait *sync.Cond) {
 		buf := make([]byte, 1024)
 		for {
-			if atomic.LoadInt32(&procExit) != 0 {
+			if procExit.IsSet() {
 				return
 			}
 			n, err := stdErrOut.Read(buf)
 			if err != nil {
 				if err == io.EOF {
-					exit <- true
+					inst.exit()
 					return
 				}
 				fmt.Fprintln(inst.terminal.Stderr(), "ssh", name, "error", err)
-				exit <- true
+				inst.exit()
 				return
 			}
 
 			_, err = inst.terminal.Stdout().Write(buf[:n])
 			if err != nil {
 				if err == io.EOF {
-					exit <- true
+					inst.exit()
 					return
 				}
 				fmt.Fprintln(inst.terminal.Stderr(), "ssh", name, "error", err)
@@ -290,7 +348,7 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 		for buf := range inputBufChan {
 			if buf == nil {
 				fmt.Fprintln(inst.terminal.Stderr(), "\rclosing stdin:", sshStdin.Close(), "\r")
-				exit <- true
+				inst.exit()
 				return
 			}
 			trans := util.TransformInput(buf)
@@ -300,7 +358,7 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 			if err != nil {
 				fmt.Fprintln(inst.terminal.Stderr(), "\rstdin got error", err, "\r")
 				fmt.Fprintln(inst.terminal.Stderr(), "\rclosing stdin:", sshStdin.Close(), "\r")
-				exit <- true
+				inst.exit()
 				return
 			}
 			if cap(buf) > 256 {
@@ -310,7 +368,7 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 	}
 
 	defer func() {
-		atomic.StoreInt32(&procExit, 1)
+		procExit.Set()
 	}()
 
 	startWait := sync.NewCond(&sync.Mutex{})
@@ -341,20 +399,24 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 		color.Redln("Error opening stdin pipe", err)
 		return inst.changed
 	}
-	go inFunc(sshStdin, startWait)
 
 	sshStdout, err := inst.session.StdoutPipe()
 	if err != nil {
 		color.Redln("Error opening stdout pipe", err)
 		return inst.changed
 	}
-	go shellOutFunc(sshStdout, sshStdin, "stdout", nextCommand, startWait)
 
 	sshStderr, err := inst.session.StderrPipe()
 	if err != nil {
 		color.Redln("Error opening stderr pipe", err)
 		return inst.changed
 	}
+
+	inst.terminal.MakeRaw()
+	defer inst.terminal.RestoreRaw()
+
+	go inFunc(sshStdin, startWait)
+	go shellOutFunc(sshStdout, sshStdin, "stdout", nextCommand, startWait)
 	go shellOutFunc(sshStderr, sshStdin, "stderr", nextCommand, startWait)
 
 	if err := inst.session.RequestPty("xterm", 80, 40, modes); err != nil {
@@ -369,25 +431,8 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 	}
 	inst.SendWindowSize()
 
-	signalWatcher := func() {
-		for s := range inst.terminal.Signals() {
-			sshSignal, ok := signalMap[s]
-			if !ok {
-				color.Yellowln("Unknown signal", s)
-			} else if sshSignal != "" {
-				inst.session.Signal(sshSignal)
-			}
-			if s == util.GetSigwinch() {
-				inst.SendWindowSize()
-			} else if s == syscall.SIGTERM {
-				exit <- true
-			}
-		}
-	}
-	go signalWatcher()
-
-	<-exit
-	atomic.StoreInt32(&procExit, 1)
+	<-inst.exitChan
+	procExit.Set()
 	return inst.changed
 }
 

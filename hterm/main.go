@@ -151,3 +151,9 @@ func (t *WSTerminal) Signals() <-chan os.Signal {
 	return nil
 	//TODO
 }
+func (t *WSTerminal) MakeRaw() {
+	//TODO
+}
+func (t *WSTerminal) RestoreRaw() {
+	//TODO
+}

@@ -15,8 +15,13 @@ func selectConnection(conf *types.Configuration, input string) *types.Connection
 	if err := ui.Init(); err != nil {
 		panic(err)
 	}
+	events := make(chan ui.Event)
 	defer func() {
 		ui.Close()
+		go func() {
+			for range events { // drain events channel
+			}
+		}()
 		if e := recover(); e != nil {
 			panic(e)
 		}
@@ -87,8 +92,6 @@ func selectConnection(conf *types.Configuration, input string) *types.Connection
 		}*/
 	}
 	doRefilter()
-
-	events := make(chan ui.Event)
 
 	go func(in <-chan ui.Event, out chan<- ui.Event) {
 		for e := range in {
