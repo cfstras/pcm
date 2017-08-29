@@ -10,12 +10,12 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"syscall"
 
 	"github.com/cfstras/pcm/types"
 	"github.com/cfstras/pcm/util"
 	"github.com/kr/pty"
+	"github.com/tevino/abool"
 )
 
 /*
@@ -49,14 +49,14 @@ func connect(c *types.Connection, terminal types.Terminal, moreCommands func() *
 	cmd := &exec.Cmd{}
 	cmd.Path = "/usr/bin/ssh"
 	cmd.Args = []string{"-v", "-p", fmt.Sprint(c.Info.Port), "-l", c.Login.User, c.Info.Host}
-	var procExit int32 = 0
+	procExit := abool.New()
 
 	outFunc := func(pipe *os.File, name string, nextCommand func() *string,
 		startWait *sync.Cond) {
 		buf := make([]byte, 1024)
 		wrotePassword := false
 		for {
-			if atomic.LoadInt32(&procExit) != 0 {
+			if procExit.IsSet() {
 				return
 			}
 			n, err := pipe.Read(buf)
@@ -183,7 +183,7 @@ func connect(c *types.Connection, terminal types.Terminal, moreCommands func() *
 
 	go func(exit <-chan bool) {
 		for _ = range exit {
-			if atomic.LoadInt32(&procExit) != 0 {
+			if procExit.IsSet() {
 				return
 			}
 			err := cmd.Process.Kill()
@@ -193,7 +193,7 @@ func connect(c *types.Connection, terminal types.Terminal, moreCommands func() *
 	}(terminal.ExitRequests())
 
 	err = cmd.Wait()
-	atomic.StoreInt32(&procExit, 1)
+	procExit.Set()
 	if err != nil {
 		fmt.Fprintln(terminal.Stderr(), "SSH Process ended:", err)
 	}

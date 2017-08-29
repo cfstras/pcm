@@ -12,4 +12,6 @@ type Terminal interface {
 	Stderr() io.Writer
 	ExitRequests() <-chan bool
 	Signals() <-chan os.Signal
+	MakeRaw()
+	RestoreRaw()
 }
