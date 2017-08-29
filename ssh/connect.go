@@ -444,6 +444,9 @@ type winchMsg struct {
 }
 
 func (inst *instance) SendWindowSize() {
+	if inst.session == nil {
+		return
+	}
 	if w, h, err := inst.terminal.GetSize(); err != nil {
 		color.Redln("Error getting term size:", err)
 	} else {
