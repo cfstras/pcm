@@ -31,6 +31,8 @@ import (
 type answerHandler func(answer string)
 
 type instance struct {
+	agentForwarding bool
+
 	terminal types.Terminal
 	conn     *types.Connection
 	// Answer handlers: push a handler to questions to capture the next line of
@@ -45,10 +47,12 @@ type instance struct {
 	exitRequested *abool.AtomicBool
 }
 
-func Connect(conn *types.Connection, terminal types.Terminal,
+func Connect(conn *types.Connection, agentForwarding bool, terminal types.Terminal,
 	moreCommands func() *string, saveChanges func(*types.Connection)) bool {
 
 	inst := &instance{
+		agentForwarding: agentForwarding,
+
 		terminal: terminal, conn: conn,
 		questions:   make(chan answerHandler, 1),
 		saveChanges: saveChanges,
@@ -158,7 +162,7 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 			} else if sshSignal != "" && inst.session != nil {
 				inst.session.Signal(sshSignal)
 			}
-			if s == util.GetSigwinch() {
+			if s == util.GetSigwinch() && inst.session != nil {
 				inst.SendWindowSize()
 			} else if s == syscall.SIGTERM {
 				inst.exit()
@@ -192,9 +196,9 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 
 	tcpConnected.Set()
 
-	//if sock != "" { // agent forwarding
-	//	agent.ForwardToRemote(client, sock)
-	//}
+	if inst.agentForwarding && sock != "" { // agent forwarding
+		agent.ForwardToRemote(client, sock)
+	}
 
 	// Each ClientConn can support multiple interactive sessions,
 	// represented by a Session.
@@ -203,7 +207,15 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 		color.Redln("Failed to create session:", err)
 		return inst.changed
 	}
-	defer inst.session.Close()
+	defer func() {
+		session := inst.session
+		inst.session = nil
+		session.Close()
+	}()
+
+	if inst.agentForwarding {
+		agent.RequestAgentForwarding(inst.session)
+	}
 
 	// Set up terminal modes
 	modes := ssh.TerminalModes{

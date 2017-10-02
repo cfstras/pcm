@@ -44,11 +44,15 @@ void setsize(int fd, int rows, int cols) {
 */
 import "C"
 
-func connect(c *types.Connection, terminal types.Terminal, moreCommands func() *string) bool {
+func connect(c *types.Connection, agentForwarding bool, terminal types.Terminal, moreCommands func() *string) bool {
 
 	cmd := &exec.Cmd{}
 	cmd.Path = "/usr/bin/ssh"
-	cmd.Args = []string{"-v", "-p", fmt.Sprint(c.Info.Port), "-l", c.Login.User, c.Info.Host}
+	cmd.Args = []string{"-v", "-p", fmt.Sprint(c.Info.Port), "-l", c.Login.User}
+	if agentForwarding {
+		cmd.Args = append(cmd.Args, "-A")
+	}
+	cmd.Args = append(cmd.Args, c.Info.Host)
 	procExit := abool.New()
 
 	outFunc := func(pipe *os.File, name string, nextCommand func() *string,

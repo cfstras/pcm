@@ -54,12 +54,14 @@ func main() {
 	useFuzzySimple := false
 	useOwnSSH := false
 	doImportAWS := false
+	agentForwarding := false
 	flag.BoolVar(&verbose, "verbose", false, "Display more info, such as hostnames and passwords")
 	flag.BoolVar(&verbose, "v", false, "Display more info, such as hostnames and passwords")
 	flag.BoolVar(&useFuzzySimple, "simple", false, "Use simple interface")
 	flag.BoolVar(&useOwnSSH, "ssh", true, "Use golang ssh client instead of os-client")
 	flag.BoolVar(&DEBUG, "debug", false, "enable debug server on :3000")
 	flag.BoolVar(&doImportAWS, "import-aws", false, "also load hosts from aws")
+	flag.BoolVar(&agentForwarding, "A", false, "enable agent-forwarding")
 	flag.Parse()
 	if pathP != nil {
 		connectionsPath = *pathP
@@ -124,12 +126,12 @@ func main() {
 	}
 	var changed bool
 	if useOwnSSH {
-		changed = ssh.Connect(conn, console, func() *string { return nil },
+		changed = ssh.Connect(conn, agentForwarding, console, func() *string { return nil },
 			func(a *types.Connection) {
 				saveConn(&conf, conn)
 			})
 	} else {
-		changed = connect(conn, console, func() *string { return nil })
+		changed = connect(conn, agentForwarding, console, func() *string { return nil })
 		if changed {
 			saveConns(&conf)
 		}
