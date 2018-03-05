@@ -72,7 +72,8 @@
 
 [[constraint]]
   name = "github.com/gizak/termui"
-  version = "1.0.0"
+  #version = "1.0.0"
+  branch = "v1"
 
 [[constraint]]
   name = "github.com/kr/pty"
