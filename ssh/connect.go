@@ -26,6 +26,7 @@ import (
 	"github.com/cfstras/go-utils/color"
 	"github.com/cfstras/pcm/types"
 	"github.com/cfstras/pcm/util"
+	"regexp"
 )
 
 type answerHandler func(answer string)
@@ -225,9 +226,11 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 	}
 
 	procExit := abool.New()
-	shellOutFunc := func(stdErrOut io.Reader, stdin io.Writer, name string, nextCommand func() *string,
+	shellOutFunc := func(stdErrOut io.Reader, stdin io.Writer, name string, nextCommandFunc func() *string,
 		startWait *sync.Cond) {
 		buf := make([]byte, 1024)
+		var lastCommand []byte
+		var nextCommand *string
 		for {
 			if procExit.IsSet() {
 				return
@@ -253,16 +256,45 @@ func (inst *instance) connect(moreCommands func() *string) bool {
 				return
 			}
 			//fmt.Fprint(inst.terminal.Stderr(), str)
+			if lastCommand != nil {
+				bufWithoutCR := regexp.MustCompile(`[^\w#:$\- ]`).ReplaceAll(buf[:n], []byte{})
+				lastCommandSafe := regexp.MustCompile(`[^\w#:$\- ]`).ReplaceAll(lastCommand, []byte{})
+				if bytes.Contains(bufWithoutCR, lastCommandSafe) {
+					lastCommand = nil
+					fmt.Fprintln(inst.terminal.Stderr(), "\rlast command got echoed\r")
+				} else {
+					safe := regexp.MustCompile(`[^\w#:$\- ]`).ReplaceAll(buf[:n], []byte{'_'})
+					fmt.Fprintln(inst.terminal.Stderr(), "\r ---", string(safe), "---\r")
+				}
+			}
 
 			str := string(buf[:n])
 			if strings.HasSuffix(str, "assword: ") || strings.HasSuffix(str, "$ ") ||
 				strings.HasSuffix(str, "# ") {
-				if answer := nextCommand(); answer != nil {
+
+				if nextCommand == nil {
+					nextCommand = nextCommandFunc()
+				}
+				if answer := nextCommand; answer != nil {
+					safePrompt:= regexp.MustCompile(`[^\w#:$\- ]`).ReplaceAllString(str, "_")
+					fmt.Fprintln(inst.terminal.Stderr(), "\r\n-- Got prompt (",safePrompt, ")\r")
+					if lastCommand != nil {
+						fmt.Fprintln(inst.terminal.Stderr(), "Waiting until the last command ", string(lastCommand), " gets echoed\r")
+						continue
+					}
+					fmt.Fprintln(inst.terminal.Stderr(), "Running: ", *answer, "\r")
+					nextCommand = nil
+
+					if *answer == util.PleaseDisconnect {
+						inst.exit()
+						return
+					}
 					//fmt.Println("\r\n--- Got", str[len(str)-4:],
 					//	"- writing next cmd", *answer, "---\r")
 					//TODO wait for this to be sent
 					stdin.Write([]byte(*answer))
 					stdin.Write([]byte("\n"))
+					lastCommand = []byte(*answer)
 				}
 			}
 
@@ -484,7 +516,9 @@ func (inst *instance) hostKeyCallback(hostname string, remote net.Addr, key ssh.
 		color.Yellowln("Registering new SSH Public Key", key.Type(),
 			newPublicString, "\r")
 		inst.conn.Options.SSHPublicKey = hex.EncodeToString(newPublicKey)
-		inst.saveChanges(inst.conn)
+		if inst.saveChanges != nil {
+			inst.saveChanges(inst.conn)
+		}
 		inst.changed = true
 		return nil
 	}
@@ -513,7 +547,9 @@ func (inst *instance) hostKeyCallback(hostname string, remote net.Addr, key ssh.
 	if text == "y" || text == "yes" {
 		inst.conn.Options.SSHPublicKey = hex.EncodeToString(newPublicKey)
 		color.Yellowln("\rSaving new public key to connections.xml.\r")
-		inst.saveChanges(inst.conn)
+		if inst.saveChanges != nil {
+			inst.saveChanges(inst.conn)
+		}
 		inst.changed = true
 		return nil
 	}

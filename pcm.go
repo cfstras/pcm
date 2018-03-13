@@ -55,6 +55,7 @@ func main() {
 	useOwnSSH := false
 	doImportAWS := false
 	agentForwarding := false
+	multiCommand := ""
 	flag.BoolVar(&verbose, "verbose", false, "Display more info, such as hostnames and passwords")
 	flag.BoolVar(&verbose, "v", false, "Display more info, such as hostnames and passwords")
 	flag.BoolVar(&useFuzzySimple, "simple", false, "Use simple interface")
@@ -62,6 +63,7 @@ func main() {
 	flag.BoolVar(&DEBUG, "debug", false, "enable debug server on :3000")
 	flag.BoolVar(&doImportAWS, "import-aws", false, "also load hosts from aws")
 	flag.BoolVar(&agentForwarding, "A", false, "enable agent-forwarding")
+	flag.StringVar(&multiCommand, "mc", "", "multi-command: execute a command on all matched hosts")
 	flag.Parse()
 	if pathP != nil {
 		connectionsPath = *pathP
@@ -77,6 +79,19 @@ func main() {
 	if flag.NArg() == 1 {
 		searchFor = flag.Arg(0)
 	}
+	if multiCommand != "" {
+		if !useFuzzySimple {
+			color.Redln("multiCommand must be used with fuzzy-simple")
+			return
+			//TODO add regex option
+		}
+		if !useOwnSSH {
+			color.Redln("multiCommand must be used with golang ssh client")
+			return
+		}
+	}
+
+
 	if DEBUG {
 		go http.ListenAndServe(":3000", nil)
 	}
@@ -92,7 +107,47 @@ func main() {
 
 	var conn *types.Connection
 	if useFuzzySimple {
-		conn = fuzzySimple(&conf, searchFor)
+		if multiCommand != "" {
+			conns := fuzzySimpleMult(&conf, searchFor)
+			color.Redln("Will run the following statement:")
+			fmt.Println(" ", multiCommand)
+			color.Redln("On these hosts:")
+			for _, conn := range conns {
+				fmt.Println(" ", conn.Path())
+			}
+			color.Redln("Are you ABSOLUTELY sure?")
+			inputReader := bufio.NewReader(os.Stdin)
+			color.Yellow("Yes, [No]: ")
+			input, err := inputReader.ReadString('\n')
+			if err != nil {
+				color.Redln("reading answer: ", err)
+				return
+			}
+			if strings.TrimSpace(input) != "Yes" {
+				color.Yellowln("You need to type 'Yes', exactly.")
+				return
+			}
+			var console types.Terminal = &consoleTerminal{
+				exit: make(chan bool),
+			}
+			for _, conn := range conns {
+				color.Greenln(" --", conn.Path())
+				commands := make(chan string, 2)
+				commands<-multiCommand
+				commands<-util.PleaseDisconnect
+				close(commands)
+				commandsFunc := func() *string {
+					ret, ok := <-commands
+					if !ok {
+						return nil
+					}
+					return &ret
+				}
+				ssh.Connect(conn, agentForwarding, console, commandsFunc, nil)
+			}
+		} else {
+			conn = fuzzySimple(&conf, searchFor)
+		}
 	} else {
 		conn = selectConnection(&conf, searchFor)
 	}
@@ -177,46 +232,45 @@ func (c *consoleTerminal) RestoreRaw() {
 }
 
 func fuzzySimple(conf *types.Configuration, searchFor string) *types.Connection {
-	words := listWords(conf.AllConnections())
-
-	reader := bufio.NewReader(os.Stdin)
-	var found string
 	for {
-		color.Yellow("Search for: ")
 		var input string
 		var err error
 		if searchFor != "" {
 			input = searchFor
 			searchFor = ""
 		} else {
+			reader := bufio.NewReader(os.Stdin)
+			color.Yellow("Search for: ")
 			input, err = reader.ReadString('\n')
 			p(err, "reading stdin")
 			input = strings.Trim(input, "\r\n ")
 		}
-		if input == "" {
-			for _, v := range words {
-				sort.Stable(StringList(words))
-				fmt.Println(v)
-			}
-			continue
-		}
-		suggs := fuzzy.RankFindFold(input, words)
-		if len(suggs) > 1 {
-			sort.Stable(suggs)
+		fmt.Println("Searching for:", searchFor)
+		conns := fuzzySimpleMult(conf, input)
+		if len(conns) > 1 {
 			color.Yellowln("Suggestions:")
-			for _, v := range suggs {
-				fmt.Println(v.Target)
+			for _, v := range conns {
+				fmt.Println(v.Path())
 			}
 			color.Redln("Please try again.")
-		} else if len(suggs) == 0 {
+		} else if len(conns) == 0 {
 			color.Redln("Nothing found for", input+". Please try again.")
 		} else {
-			found = suggs[0].Target
-			break
+			return conns[0]
 		}
 	}
-	conn := conf.AllConnections()[found]
-	return conn
+}
+
+func fuzzySimpleMult(conf *types.Configuration, input string) []*types.Connection {
+	words := listWords(conf.AllConnections())
+
+	suggs := fuzzy.RankFindFold(input, words)
+	sort.Stable(suggs)
+	conns := []*types.Connection{}
+	for _, sugg := range suggs{
+		conns = append(conns, conf.AllConnections()[sugg.Target])
+	}
+	return conns
 }
 
 func DummyReader(label string, input io.Reader) (io.Reader, error) {
