@@ -509,7 +509,7 @@ func (inst *instance) hostKeyCallback(hostname string, remote net.Addr, key ssh.
 	}
 	inst.terminal.Stderr().Write([]byte{'\r', '\n'})
 
-	text := strings.ToLower(string(buf[:n]))
+	text := strings.TrimSpace(strings.ToLower(string(buf[:n])))
 	if text == "y" || text == "yes" {
 		inst.conn.Options.SSHPublicKey = hex.EncodeToString(newPublicKey)
 		color.Yellowln("\rSaving new public key to connections.xml.\r")
