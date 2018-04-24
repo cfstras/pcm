@@ -276,7 +276,6 @@ func saveConn(conf *types.Configuration, conn *types.Connection) {
 	saveConns(&currentConf)
 	color.Yellowln("done.\r")
 }
-
 func saveConns(conf *types.Configuration) {
 	filename := connectionsPath
 	tmp := filename + ".tmp"
@@ -293,7 +292,21 @@ func saveConns(conf *types.Configuration) {
 	encoding := unicode.UTF16(unicode.LittleEndian, unicode.ExpectBOM)
 	textEncoder := encoding.NewEncoder()
 
-	writer := textEncoder.Writer(wr)
+	rawWriter := textEncoder.Writer(wr)
+	replacer := strings.NewReplacer("\n", "\r\n",
+		"<commandline></commandline>", "<commandline />",
+		"<description></description>", "<description />",
+		"<prompt></prompt>", "<prompt />",
+		"<command1></command1>", "<command1 />",
+		"<command2></command2>", "<command2 />",
+		"<command3></command3>", "<command3 />",
+		"<command4></command4>", "<command4 />",
+		"<command5></command5>", "<command5 />",
+		">true<", ">True<", ">false<", ">False<",
+		`"true"`, `"True"`, `"false"`, `"False"`,
+	)
+	writer := util.ReplaceWriter{rawWriter, replacer}
+
 	fmt.Fprintln(writer, `<?xml version="1.0" encoding="utf-16"?>
 <!-- ****************************************************************-->
 <!-- *                                                              *-->

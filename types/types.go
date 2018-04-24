@@ -62,7 +62,6 @@ type Info struct {
 	Commandline string `xml:"commandline"`
 	Description string `xml:"description"`
 }
-
 type Login struct {
 	User     string `xml:"login"`
 	Password string `xml:"password"`
